@@ -27,6 +27,8 @@ from nba_predictor.jobs.operator_actions import (
 )
 from nba_predictor.predict.predict_games import predict_matchup, team_id_for_abbreviation
 
+st.set_option("client.toolbarMode", "minimal")
+
 
 def _inject_styles() -> None:
     st.markdown(
