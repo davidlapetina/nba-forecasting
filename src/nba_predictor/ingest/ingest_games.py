@@ -6,7 +6,7 @@ from typing import Any
 
 import pandas as pd
 
-from nba_predictor.db import games, get_engine, teams, upsert_rows
+from nba_predictor.db import games, get_engine, team_season_identities, teams, upsert_rows
 from nba_predictor.ingest.nba_client import NBAClient
 
 
@@ -30,6 +30,18 @@ def normalize_team_rows(log_df: pd.DataFrame) -> list[dict[str, Any]]:
             "nickname": None,
         }
     return list(rows_by_id.values())
+
+
+def normalize_team_identity_rows(log_df: pd.DataFrame, season: str) -> list[dict[str, Any]]:
+    return [
+        {
+            "team_id": row["team_id"],
+            "season": season,
+            "abbreviation": row["abbreviation"],
+            "full_name": row["full_name"],
+        }
+        for row in normalize_team_rows(log_df)
+    ]
 
 
 def normalize_game_rows(log_df: pd.DataFrame, season: str, season_type: str) -> list[dict[str, Any]]:
@@ -67,6 +79,13 @@ def ingest_games(season: str, season_type: str = "Regular Season") -> int:
     upsert_rows(engine, teams, client.team_directory(), ["team_id"], ["abbreviation", "full_name", "city", "nickname"])
     log_df = client.fetch_league_game_log(season, season_type)
     upsert_rows(engine, teams, normalize_team_rows(log_df), ["team_id"], ["abbreviation", "full_name", "city", "nickname"])
+    upsert_rows(
+        engine,
+        team_season_identities,
+        normalize_team_identity_rows(log_df, season),
+        ["team_id", "season"],
+        ["abbreviation", "full_name"],
+    )
     rows = normalize_game_rows(log_df, season, season_type)
     return upsert_rows(
         engine,

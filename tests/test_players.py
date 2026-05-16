@@ -3,7 +3,7 @@ from __future__ import annotations
 import pandas as pd
 
 from nba_predictor.ingest.ingest_players import normalize_player_game_rows
-from nba_predictor.ingest.ingest_games import normalize_team_rows
+from nba_predictor.ingest.ingest_games import normalize_team_identity_rows, normalize_team_rows
 from nba_predictor.ingest.ingest_rosters import normalize_coach_rows, normalize_roster_rows
 
 
@@ -80,6 +80,25 @@ def test_normalize_team_rows_learns_historical_teams_from_logs() -> None:
 
     assert rows[0]["abbreviation"] == "HUS"
     assert rows[0]["full_name"] == "Toronto Huskies"
+
+
+def test_normalize_team_identity_rows_preserves_season_label() -> None:
+    frame = pd.DataFrame(
+        [
+            {"TEAM_ID": 1610612760, "TEAM_ABBREVIATION": "SEA", "TEAM_NAME": "Seattle SuperSonics"},
+        ]
+    )
+
+    rows = normalize_team_identity_rows(frame, "1994-95")
+
+    assert rows == [
+        {
+            "team_id": 1610612760,
+            "season": "1994-95",
+            "abbreviation": "SEA",
+            "full_name": "Seattle SuperSonics",
+        }
+    ]
 
 
 def test_normalize_roster_and_coach_rows() -> None:

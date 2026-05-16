@@ -65,6 +65,9 @@ The classifier then combines those forecasts with rolling historical features an
 
 Franchise ELO starts at `2500` for each franchise's first recorded game. Ratings update after every played game, and the full pregame/postgame series is stored in `team_elo_history`. The pregame value is copied into feature tables for leakage-safe model training.
 
+Historical franchise labels are stored separately in `team_season_identities`, so analytics can show season-correct abbreviations such as `SEA`, `NJN`, and `VAN`, plus same-code historical names such as `Washington Bullets` and `Charlotte Bobcats`, while the core `teams` table still keeps each current franchise identity for present-day operations.
+`make features` refreshes this table from already stored local player logs, so rebuilding historical labels does not require another network backfill.
+
 ## Prerequisites
 
 Required:
@@ -294,7 +297,7 @@ The chatbot is local-only. It uses Ollama with `llama3.2` by default.
    docker compose --profile dashboard up -d dashboard
    ```
 
-The chatbot translates supported questions into constrained read-only SQL or routes future-matchup questions through the prediction pipeline. Deterministic common queries, such as current ELO rankings and simple player scoring questions, bypass free-form SQL generation for reliability.
+The chatbot translates supported questions into constrained read-only SQL or routes future-matchup questions through the prediction pipeline. Deterministic common queries, such as current ELO rankings, season-best records, and simple player scoring questions, bypass free-form SQL generation for reliability.
 
 ## Day-to-Day Operations
 
@@ -403,7 +406,8 @@ Main views:
 - `Teams`: one tile per franchise with current ELO, last five results, and last game date
 - team detail: all-time ELO, season ELO, recent games, saved predictions, player/team reconciliation, coach assignments, team-scoped chat
 - `Matchup`: direct matchup prediction form
-- `Ask Data`: general natural-language analytics
+- `Ask Data`: general natural-language analytics with a visible question input, quick prompts, result tables, and generated SQL inspection
+- `Operations`: buttons for routine ingest, feature, forecast, train, evaluate, predict, refresh, refresh-and-retrain, and full-pipeline jobs
 - `Model`: latest saved evaluation metrics and plots
 
 ## Useful Commands
@@ -533,6 +537,7 @@ The current Dockerfiles copy source before dependency installation, so image reb
 ## Data and Modeling Limitations
 
 - NBA.com data access may be rate-limited or change over time.
+- This repository distributes software, not NBA.com-derived data. Review upstream terms before sharing any locally collected datasets.
 - Predictions are not betting advice.
 - Injuries, trades, lineup changes, and rest decisions can strongly affect accuracy.
 - TimesFM forecasts numerical team trends, not match outcomes directly.

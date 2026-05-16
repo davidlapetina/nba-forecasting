@@ -38,6 +38,18 @@ teams = Table(
     Column("created_at", DateTime, server_default=func.now()),
 )
 
+team_season_identities = Table(
+    "team_season_identities",
+    metadata,
+    Column("id", BigInteger, primary_key=True, autoincrement=True),
+    Column("team_id", BigInteger, nullable=False),
+    Column("season", String, nullable=False),
+    Column("abbreviation", String, nullable=False),
+    Column("full_name", String),
+    Column("created_at", DateTime, server_default=func.now()),
+    UniqueConstraint("team_id", "season", name="uq_team_season_identities_team_season"),
+)
+
 players = Table(
     "players",
     metadata,

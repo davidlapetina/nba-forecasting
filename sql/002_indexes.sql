@@ -1,6 +1,7 @@
 CREATE INDEX IF NOT EXISTS idx_games_game_date ON games(game_date);
 CREATE INDEX IF NOT EXISTS idx_games_home_team_id ON games(home_team_id);
 CREATE INDEX IF NOT EXISTS idx_games_away_team_id ON games(away_team_id);
+CREATE INDEX IF NOT EXISTS idx_team_season_identities_season_team ON team_season_identities(season, team_id);
 CREATE INDEX IF NOT EXISTS idx_player_game_stats_player_date ON player_game_stats(player_id, game_date);
 CREATE INDEX IF NOT EXISTS idx_player_game_stats_team_date ON player_game_stats(team_id, game_date);
 CREATE INDEX IF NOT EXISTS idx_team_rosters_team_season ON team_rosters(team_id, season);

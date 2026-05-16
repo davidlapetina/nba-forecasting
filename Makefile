@@ -44,6 +44,7 @@ backfill-officials:
 	$(PYTHON) -m nba_predictor.ingest.ingest_history --start-season $(START_SEASON) --end-season $(END_SEASON) --skip-box-scores --include-officials
 
 features:
+	$(PYTHON) -m nba_predictor.features.build_team_season_identities
 	$(PYTHON) -m nba_predictor.features.build_team_elo_history
 	$(PYTHON) -m nba_predictor.features.build_team_daily_features
 	$(PYTHON) -m nba_predictor.features.build_game_features

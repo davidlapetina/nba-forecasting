@@ -11,6 +11,7 @@ from nba_predictor.db import get_engine, scheduler_sync_state, upsert_rows
 from nba_predictor.features.build_game_features import build_game_features
 from nba_predictor.features.build_team_elo_history import build_team_elo_history
 from nba_predictor.features.build_team_daily_features import build_team_daily_features
+from nba_predictor.features.build_team_season_identities import build_team_season_identities
 from nba_predictor.forecast.forecast_team_metrics import forecast_team_metrics
 from nba_predictor.ingest.ingest_box_scores import ingest_box_scores
 from nba_predictor.ingest.ingest_games import ingest_games
@@ -87,6 +88,7 @@ def run_data_refresh(seasons: list[str], predict_date: date, job_name: str = "da
         _sum_counts(counts, ingest_rosters(season))
     counts.update(
         {
+        "team_season_identities": build_team_season_identities(),
         "team_elo_history": build_team_elo_history(),
         "team_features": build_team_daily_features(),
         "game_features": build_game_features(),

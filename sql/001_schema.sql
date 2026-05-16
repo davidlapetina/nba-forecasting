@@ -7,6 +7,16 @@ CREATE TABLE IF NOT EXISTS teams (
     created_at TIMESTAMP DEFAULT NOW()
 );
 
+CREATE TABLE IF NOT EXISTS team_season_identities (
+    id BIGSERIAL PRIMARY KEY,
+    team_id BIGINT NOT NULL,
+    season TEXT NOT NULL,
+    abbreviation TEXT NOT NULL,
+    full_name TEXT,
+    created_at TIMESTAMP DEFAULT NOW(),
+    UNIQUE(team_id, season)
+);
+
 CREATE TABLE IF NOT EXISTS players (
     player_id BIGINT PRIMARY KEY,
     full_name TEXT NOT NULL,

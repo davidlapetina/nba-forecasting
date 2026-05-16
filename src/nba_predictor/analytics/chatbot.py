@@ -9,7 +9,7 @@ from typing import Any, Literal
 import httpx
 import pandas as pd
 from pandas.errors import DatabaseError
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ValidationError
 from sqlalchemy import text
 from sqlglot import exp, parse_one
 
@@ -17,8 +17,12 @@ from nba_predictor.config import settings
 from nba_predictor.db import get_engine
 from nba_predictor.predict.predict_games import predict_matchup, team_id_for_abbreviation
 
+MAX_SQL_REPAIR_ATTEMPTS = 3
+MAX_PLAN_ATTEMPTS = 3
+
 ALLOWED_TABLES = {
     "teams",
+    "team_season_identities",
     "players",
     "games",
     "player_game_stats",
@@ -40,6 +44,7 @@ ALLOWED_TABLES = {
 
 SCHEMA_CONTEXT = """
 teams(team_id, abbreviation, full_name, city, nickname)
+team_season_identities(team_id, season, abbreviation, full_name)
 players(player_id, full_name, first_name, last_name, is_active)
 games(game_id, season, game_date, home_team_id, away_team_id, home_score, away_score, home_team_win, season_type)
 player_game_stats(game_id, player_id, team_id, game_date, season, season_type, matchup, is_home, won, minutes, points, rebounds, assists, steals, blocks, turnovers, field_goal_pct, three_point_pct, free_throw_pct, plus_minus)
@@ -125,8 +130,19 @@ def create_query_plan(question: str, client: OllamaClient | None = None) -> Quer
     heuristic = _heuristic_plan(question)
     if heuristic is not None:
         return heuristic
-    raw = (client or OllamaClient()).chat(_plan_prompt(question), response_format="json")
-    return QueryPlan.model_validate_json(raw)
+    ollama = client or OllamaClient()
+    messages = _plan_prompt(question)
+    last_error: Exception | None = None
+    for attempt in range(MAX_PLAN_ATTEMPTS):
+        raw = ollama.chat(messages, response_format="json")
+        try:
+            return _validate_query_plan(raw)
+        except (ValidationError, ValueError) as exc:
+            last_error = exc
+            if attempt == MAX_PLAN_ATTEMPTS - 1:
+                break
+            messages = _invalid_plan_prompt(question, raw, str(exc))
+    raise ValueError("Could not build a valid query plan.") from last_error
 
 
 def _heuristic_plan(question: str) -> QueryPlan | None:
@@ -164,6 +180,48 @@ def _heuristic_plan(question: str) -> QueryPlan | None:
             ),
             rationale="deterministic player scoring query",
         )
+    season_year_match = re.search(r"\b(19\d{2}|20\d{2})\b", question)
+    season_result_query = any(
+        term in normalized
+        for term in (
+            "best result",
+            "best results",
+            "best record",
+            "best team",
+            "top team",
+            "most wins",
+        )
+    )
+    if season_year_match and season_result_query:
+        season = _season_ending_in(int(season_year_match.group(1)))
+        return QueryPlan(
+            mode="sql",
+            sql=(
+                "with team_results as ("
+                "select season, home_team_id as team_id, home_team_win as won "
+                "from games "
+                "where season_type = 'Regular Season' "
+                "union all "
+                "select season, away_team_id as team_id, not home_team_win as won "
+                "from games "
+                "where season_type = 'Regular Season'"
+                ") "
+                "select coalesce(i.abbreviation, t.abbreviation) as abbreviation, "
+                "coalesce(i.full_name, t.full_name) as full_name, r.season, "
+                "count(*) filter (where r.won) as wins, "
+                "count(*) filter (where not r.won) as losses, "
+                "count(*) as games, "
+                "round(avg(r.won::int)::numeric, 3) as win_pct "
+                "from team_results r "
+                "join teams t on t.team_id = r.team_id "
+                "left join team_season_identities i on i.team_id = r.team_id and i.season = r.season "
+                f"where r.season = '{season}' "
+                "group by t.team_id, t.abbreviation, t.full_name, i.abbreviation, i.full_name, r.season "
+                "order by win_pct desc, wins desc, coalesce(i.full_name, t.full_name) "
+                "limit 10"
+            ),
+            rationale="deterministic season record query",
+        )
     abbreviations = re.findall(r"\b[A-Z]{3}\b", question.upper())
     date_match = re.search(r"\b\d{4}-\d{2}-\d{2}\b", question)
     matchup_terms = ("favored", "favorite", "hosts", "host", "matchup", "beat", "win")
@@ -178,11 +236,49 @@ def _heuristic_plan(question: str) -> QueryPlan | None:
     return None
 
 
+def _season_ending_in(year: int) -> str:
+    return f"{year - 1}-{year % 100:02d}"
+
+
+def _validate_query_plan(raw: str) -> QueryPlan:
+    plan = QueryPlan.model_validate_json(raw)
+    if plan.mode == "sql" and not plan.sql:
+        raise ValueError("SQL plans require a query.")
+    if plan.mode == "prediction" and (plan.home_team is None or plan.away_team is None or plan.game_date is None):
+        raise ValueError("Prediction plans require home_team, away_team, and game_date.")
+    return plan
+
+
+def _invalid_plan_prompt(question: str, bad_response: str, error: str) -> list[dict[str, str]]:
+    return [
+        {
+            "role": "system",
+            "content": (
+                "Return a corrected JSON plan only. "
+                "The previous response was invalid. "
+                "Use exactly one of these shapes:\n"
+                '{"mode":"sql","sql":"SELECT ...","rationale":"..."}\n'
+                'or {"mode":"prediction","home_team":"BOS","away_team":"NYK","game_date":"2026-01-15","rationale":"..."}\n'
+                "Do not return an error object, explanation, result rows, markdown, or any extra keys outside the plan."
+            ),
+        },
+        {
+            "role": "user",
+            "content": (
+                f"Question: {question}\n"
+                f"Invalid response: {bad_response}\n"
+                f"Validation error: {error}"
+            ),
+        },
+    ]
+
+
 def validate_read_only_sql(sql: str) -> str:
     expression = parse_one(sql, read="postgres")
     if not isinstance(expression, exp.Select):
         raise ValueError("Only SELECT queries are allowed.")
-    referenced_tables = {table.name for table in expression.find_all(exp.Table)}
+    cte_names = {cte.alias_or_name for cte in expression.find_all(exp.CTE)}
+    referenced_tables = {table.name for table in expression.find_all(exp.Table)} - cte_names
     unknown_tables = referenced_tables - ALLOWED_TABLES
     if unknown_tables:
         raise ValueError(f"Query references unsupported tables: {', '.join(sorted(unknown_tables))}")
@@ -259,6 +355,65 @@ def _repair_prompt(question: str, sql: str, error: str) -> list[dict[str, str]]:
     ]
 
 
+def _invalid_repair_prompt(question: str, sql: str, database_error: str, bad_response: str, validation_error: str) -> list[dict[str, str]]:
+    return [
+        {
+            "role": "system",
+            "content": (
+                "Return a corrected SQL-plan JSON object only. "
+                "Use exactly this shape: "
+                '{"mode":"sql","sql":"SELECT ...","rationale":"..."} '
+                "The SQL must be a single PostgreSQL SELECT using only the provided schema. "
+                "Do not return query results, error objects, markdown, or explanatory text.\n\n"
+                f"Schema:\n{SCHEMA_CONTEXT}"
+            ),
+        },
+        {
+            "role": "user",
+            "content": (
+                f"Question: {question}\n"
+                f"Broken SQL: {sql}\n"
+                f"Database error: {database_error}\n"
+                f"Invalid repair response: {bad_response}\n"
+                f"Validation error: {validation_error}"
+            ),
+        },
+    ]
+
+
+def _request_sql_repair(question: str, sql: str, error: str, client: OllamaClient) -> QueryPlan:
+    messages = _repair_prompt(question, sql, error)
+    last_error: Exception | None = None
+    for attempt in range(MAX_PLAN_ATTEMPTS):
+        raw = client.chat(messages, response_format="json")
+        try:
+            plan = _validate_query_plan(raw)
+            if plan.mode != "sql" or plan.sql is None:
+                raise ValueError("SQL repair must return an SQL plan.")
+            return plan
+        except (ValidationError, ValueError) as exc:
+            last_error = exc
+            if attempt == MAX_PLAN_ATTEMPTS - 1:
+                break
+            messages = _invalid_repair_prompt(question, sql, error, raw, str(exc))
+    raise ValueError("Generated SQL repair response was invalid.") from last_error
+
+
+def execute_sql_with_retries(question: str, sql: str, client: OllamaClient, attempts: int = MAX_SQL_REPAIR_ATTEMPTS) -> tuple[str, pd.DataFrame]:
+    current_sql = validate_read_only_sql(sql)
+    last_error: DatabaseError | None = None
+    for attempt in range(attempts + 1):
+        try:
+            return current_sql, execute_select(current_sql)
+        except DatabaseError as exc:
+            last_error = exc
+            if attempt == attempts:
+                break
+            repaired_plan = _request_sql_repair(question, current_sql, str(exc), client)
+            current_sql = validate_read_only_sql(repaired_plan.sql)
+    raise ValueError("Generated SQL could not be executed after repair retries.") from last_error
+
+
 def _fallback_summary(mode: str, rows: list[dict[str, Any]]) -> str:
     if not rows:
         return "No matching rows were found."
@@ -274,6 +429,11 @@ def _fallback_summary(mode: str, rows: list[dict[str, Any]]) -> str:
             f"{first['full_name']} leads the result set at "
             f"{float(first['avg_points']):.1f} points per game across {int(first['games'])} games."
         )
+    if {"abbreviation", "season", "wins", "losses", "win_pct"} <= set(first):
+        return (
+            f"{first['abbreviation']} had the best regular-season record in {first['season']} at "
+            f"{int(first['wins'])}-{int(first['losses'])} ({float(first['win_pct']):.1%})."
+        )
     if {"abbreviation", "elo_rating"} <= set(first):
         return f"{first['abbreviation']} leads the result set with an ELO of {float(first['elo_rating']):.1f}."
     return f"Returned {len(rows)} row(s)."
@@ -288,19 +448,7 @@ def answer_question(question: str, client: OllamaClient | None = None) -> ChatAn
     else:
         if plan.sql is None:
             raise ValueError("SQL plans require a query.")
-        sql = validate_read_only_sql(plan.sql)
-        try:
-            frame = execute_select(sql)
-        except DatabaseError as exc:
-            repaired_raw = ollama.chat(_repair_prompt(question, sql, str(exc)), response_format="json")
-            repaired_plan = QueryPlan.model_validate_json(repaired_raw)
-            if repaired_plan.mode != "sql" or repaired_plan.sql is None:
-                raise ValueError("Generated SQL could not be repaired.") from exc
-            sql = validate_read_only_sql(repaired_plan.sql)
-            try:
-                frame = execute_select(sql)
-            except DatabaseError as repaired_exc:
-                raise ValueError("Generated SQL could not be executed.") from repaired_exc
+        sql, frame = execute_sql_with_retries(question, plan.sql, ollama)
         rows = json.loads(frame.to_json(orient="records", date_format="iso"))
     if plan.rationale.startswith("deterministic"):
         summary = _fallback_summary(plan.mode, rows)

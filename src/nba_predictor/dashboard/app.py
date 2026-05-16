@@ -14,6 +14,17 @@ from nba_predictor.analytics.chatbot import answer_question
 from nba_predictor.api.main import list_predictions
 from nba_predictor.config import settings
 from nba_predictor.db import game_predictions, get_engine, player_game_stats, team_elo_history, team_game_stats, teams
+from nba_predictor.jobs.operator_actions import (
+    run_evaluate,
+    run_features,
+    run_forecast,
+    run_full_pipeline,
+    run_ingest,
+    run_predict,
+    run_refresh,
+    run_refresh_full,
+    run_train,
+)
 from nba_predictor.predict.predict_games import predict_matchup, team_id_for_abbreviation
 
 
@@ -369,6 +380,16 @@ def render_teams_tab() -> None:
         return
     selected_team = st.session_state.get("selected_team")
     if selected_team is None:
+        sort_mode = st.radio(
+            "Sort teams",
+            ["Name", "ELO"],
+            horizontal=True,
+            key="team_sort_mode",
+        )
+        overview = overview.sort_values(
+            ["current_elo", "full_name", "abbreviation"] if sort_mode == "ELO" else ["full_name", "abbreviation"],
+            ascending=[False, True, True] if sort_mode == "ELO" else [True, True],
+        )
         cols = st.columns(5)
         for index, row in enumerate(overview.itertuples(index=False)):
             with cols[index % 5]:
@@ -542,6 +563,55 @@ def render_model_tab() -> None:
         chart_cols[1].image(str(calibration_path), caption="Calibration curve")
 
 
+def _render_operation_result(result: dict[str, Any]) -> None:
+    st.success("Operation completed.")
+    st.json(result)
+
+
+def _run_dashboard_operation(label: str, fn: Any) -> None:
+    try:
+        with st.spinner(f"{label} running..."):
+            result = fn()
+    except Exception as exc:
+        st.error(f"{label} failed: {exc}")
+        return
+    _render_operation_result(result)
+
+
+def render_operations_tab() -> None:
+    st.subheader("Operations")
+    st.caption("Run routine pipeline jobs from the dashboard. Historical backfills remain CLI-only because they can run for hours.")
+    defaults = st.columns(2)
+    season = defaults[0].text_input("Season", value="2025-26", key="operations_season")
+    predict_date = defaults[1].date_input("Prediction date", value=date.today(), key="operations_predict_date")
+
+    st.markdown("#### Routine Refresh")
+    refresh_cols = st.columns(2)
+    if refresh_cols[0].button("Refresh data", use_container_width=True):
+        _run_dashboard_operation("Refresh data", lambda: run_refresh(season, predict_date))
+    if refresh_cols[1].button("Refresh + retrain", use_container_width=True):
+        _run_dashboard_operation("Refresh and retrain", lambda: run_refresh_full(season, predict_date))
+
+    st.markdown("#### Pipeline Steps")
+    step_cols = st.columns(4)
+    if step_cols[0].button("Ingest", use_container_width=True):
+        _run_dashboard_operation("Ingest", lambda: run_ingest(season))
+    if step_cols[1].button("Build features", use_container_width=True):
+        _run_dashboard_operation("Build features", run_features)
+    if step_cols[2].button("Forecast", use_container_width=True):
+        _run_dashboard_operation("Forecast", run_forecast)
+    if step_cols[3].button("Predict", use_container_width=True):
+        _run_dashboard_operation("Predict", lambda: run_predict(predict_date))
+
+    model_cols = st.columns(3)
+    if model_cols[0].button("Train", use_container_width=True):
+        _run_dashboard_operation("Train", run_train)
+    if model_cols[1].button("Evaluate", use_container_width=True):
+        _run_dashboard_operation("Evaluate", run_evaluate)
+    if model_cols[2].button("Full pipeline", use_container_width=True):
+        _run_dashboard_operation("Full pipeline", lambda: run_full_pipeline(season, predict_date))
+
+
 def _chat_history(history_key: str = "chat_history") -> list[dict[str, Any]]:
     return st.session_state.setdefault(history_key, [])
 
@@ -591,7 +661,22 @@ def render_chat_interface(
     prompt_cols = st.columns(len(quick_prompts))
     for column, prompt in zip(prompt_cols, quick_prompts, strict=True):
         if column.button(prompt, use_container_width=True):
-            _submit_chat_question(prompt, history_key)
+            with st.spinner("Processing question with the local model and database..."):
+                _submit_chat_question(prompt, history_key)
+            st.rerun()
+
+    with st.form(f"{history_key}_form", clear_on_submit=True):
+        form_cols = st.columns([5, 1])
+        question = form_cols[0].text_input(
+            "Question",
+            placeholder=input_placeholder,
+            label_visibility="collapsed",
+        )
+        submitted = form_cols[1].form_submit_button("Ask", use_container_width=True)
+    if submitted and question.strip():
+        with st.spinner("Processing question with the local model and database..."):
+            _submit_chat_question(question.strip(), history_key)
+        st.rerun()
 
     for message in _chat_history(history_key):
         with st.chat_message(message["role"]):
@@ -601,12 +686,6 @@ def render_chat_interface(
                 _render_chat_answer(dict(message["answer"]))
             else:
                 st.error(str(message["error"]))
-
-    question = st.chat_input(input_placeholder, key=f"{history_key}_input")
-    if question:
-        _submit_chat_question(question.strip(), history_key)
-        st.rerun()
-
 
 def render_chat_tab() -> None:
     st.subheader("Ask Data")
@@ -626,13 +705,17 @@ def main() -> None:
     st.markdown('<h1 class="dashboard-title">NBA Predictor</h1>', unsafe_allow_html=True)
     st.markdown('<p class="dashboard-subtitle">Team form, matchup predictions, and local analytics.</p>', unsafe_allow_html=True)
     render_overview()
-    teams_tab, matchup_tab, chat_tab, model_tab = st.tabs(["Teams", "Matchup", "Ask Data", "Model"])
+    teams_tab, matchup_tab, chat_tab, operations_tab, model_tab = st.tabs(
+        ["Teams", "Matchup", "Ask Data", "Operations", "Model"]
+    )
     with teams_tab:
         render_teams_tab()
     with matchup_tab:
         render_matchup_tab()
     with chat_tab:
         render_chat_tab()
+    with operations_tab:
+        render_operations_tab()
     with model_tab:
         render_model_tab()
 
