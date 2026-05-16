@@ -1,0 +1,88 @@
+services:
+  postgres:
+    image: postgres:16
+    container_name: nba_predictor_postgres
+    environment:
+      POSTGRES_DB: nba_predictor
+      POSTGRES_USER: nba
+      POSTGRES_PASSWORD: nba
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./sql:/docker-entrypoint-initdb.d
+
+  api:
+    build: .
+    container_name: nba_predictor_api
+    env_file:
+      - .env
+    environment:
+      POSTGRES_HOST: postgres
+      OLLAMA_BASE_URL: http://host.docker.internal:11434
+    depends_on:
+      - postgres
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./models:/app/models
+      - ./data:/app/data
+
+  dashboard:
+    build:
+      context: .
+      dockerfile: Dockerfile.dashboard
+    container_name: nba_predictor_dashboard
+    env_file:
+      - .env
+    environment:
+      POSTGRES_HOST: postgres
+      OLLAMA_BASE_URL: http://host.docker.internal:11434
+    depends_on:
+      - postgres
+      - api
+    profiles:
+      - dashboard
+    ports:
+      - "8501:8501"
+    volumes:
+      - ./models:/app/models
+      - ./data:/app/data
+    command: ["streamlit", "run", "src/nba_predictor/dashboard/app.py", "--server.address", "0.0.0.0", "--server.port", "8501"]
+
+  daily-refresh:
+    build: .
+    container_name: nba_predictor_daily_refresh
+    env_file:
+      - .env
+    environment:
+      POSTGRES_HOST: postgres
+      OLLAMA_BASE_URL: http://host.docker.internal:11434
+    depends_on:
+      - postgres
+    profiles:
+      - scheduler
+    volumes:
+      - ./models:/app/models
+      - ./data:/app/data
+    command: ["python", "-m", "nba_predictor.jobs.refresh_pipeline", "--interval-hours", "24"]
+
+  full-refresh:
+    build: .
+    container_name: nba_predictor_full_refresh
+    env_file:
+      - .env
+    environment:
+      POSTGRES_HOST: postgres
+      OLLAMA_BASE_URL: http://host.docker.internal:11434
+    depends_on:
+      - postgres
+    profiles:
+      - scheduler
+    volumes:
+      - ./models:/app/models
+      - ./data:/app/data
+    command: ["python", "-m", "nba_predictor.jobs.refresh_pipeline", "--interval-hours", "168", "--retrain"]
+
+volumes:
+  postgres_data:

@@ -1,0 +1,14 @@
+CREATE INDEX IF NOT EXISTS idx_games_game_date ON games(game_date);
+CREATE INDEX IF NOT EXISTS idx_games_home_team_id ON games(home_team_id);
+CREATE INDEX IF NOT EXISTS idx_games_away_team_id ON games(away_team_id);
+CREATE INDEX IF NOT EXISTS idx_player_game_stats_player_date ON player_game_stats(player_id, game_date);
+CREATE INDEX IF NOT EXISTS idx_player_game_stats_team_date ON player_game_stats(team_id, game_date);
+CREATE INDEX IF NOT EXISTS idx_team_rosters_team_season ON team_rosters(team_id, season);
+CREATE INDEX IF NOT EXISTS idx_team_coaches_team_season ON team_coaches(team_id, season);
+CREATE INDEX IF NOT EXISTS idx_team_game_stats_team_date ON team_game_stats(team_id, game_date);
+CREATE INDEX IF NOT EXISTS idx_game_officials_referee_id ON game_officials(referee_id);
+CREATE INDEX IF NOT EXISTS idx_team_daily_features_team_date ON team_daily_features(team_id, feature_date);
+CREATE INDEX IF NOT EXISTS idx_team_elo_history_team_date ON team_elo_history(team_id, game_date);
+CREATE INDEX IF NOT EXISTS idx_forecasts_team_date ON team_metric_forecasts(team_id, forecast_date);
+CREATE INDEX IF NOT EXISTS idx_predictions_game_id ON game_predictions(game_id);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_game_predictions_game_id ON game_predictions(game_id);

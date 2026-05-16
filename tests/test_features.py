@@ -1,0 +1,71 @@
+from __future__ import annotations
+
+import pandas as pd
+
+from nba_predictor.features.build_team_daily_features import compute_team_daily_feature_rows
+
+
+def _frames() -> tuple[pd.DataFrame, pd.DataFrame]:
+    games = pd.DataFrame(
+        [
+            {"game_id": "g1", "game_date": "2025-01-01", "home_team_id": 1, "away_team_id": 2, "home_score": 100, "away_score": 90, "home_team_win": True},
+            {"game_id": "g2", "game_date": "2025-01-03", "home_team_id": 2, "away_team_id": 1, "home_score": 500, "away_score": 95, "home_team_win": False},
+        ]
+    )
+    stats = pd.DataFrame(
+        [
+            {"game_id": "g1", "team_id": 1, "game_date": "2025-01-01", "points": 100, "rebounds": 40, "assists": 20, "turnovers": 10, "offensive_rating": 110, "defensive_rating": 100, "pace": 98},
+            {"game_id": "g1", "team_id": 2, "game_date": "2025-01-01", "points": 90, "rebounds": 38, "assists": 18, "turnovers": 12, "offensive_rating": 100, "defensive_rating": 110, "pace": 98},
+            {"game_id": "g2", "team_id": 2, "game_date": "2025-01-03", "points": 500, "rebounds": 39, "assists": 19, "turnovers": 11, "offensive_rating": 101, "defensive_rating": 109, "pace": 99},
+            {"game_id": "g2", "team_id": 1, "game_date": "2025-01-03", "points": 95, "rebounds": 41, "assists": 21, "turnovers": 9, "offensive_rating": 111, "defensive_rating": 99, "pace": 99},
+        ]
+    )
+    return stats, games
+
+
+def test_daily_features_do_not_use_same_game_or_future_game() -> None:
+    stats, games = _frames()
+    rows = compute_team_daily_feature_rows(stats, games)
+    team_two_g2 = next(row for row in rows if row["team_id"] == 2 and str(row["feature_date"]) == "2025-01-03")
+    assert team_two_g2["avg_points_last_10"] == 90.0
+    assert team_two_g2["games_played"] == 1
+
+
+def test_daily_features_emit_one_row_for_same_day_doubleheader() -> None:
+    stats, games = _frames()
+    games = pd.concat(
+        [
+            games,
+            pd.DataFrame(
+                [
+                    {
+                        "game_id": "g3",
+                        "game_date": "2025-01-03",
+                        "home_team_id": 1,
+                        "away_team_id": 2,
+                        "home_score": 99,
+                        "away_score": 98,
+                        "home_team_win": True,
+                    }
+                ]
+            ),
+        ],
+        ignore_index=True,
+    )
+    stats = pd.concat(
+        [
+            stats,
+            pd.DataFrame(
+                [
+                    {"game_id": "g3", "team_id": 1, "game_date": "2025-01-03", "points": 99, "rebounds": 40, "assists": 20, "turnovers": 10, "offensive_rating": 110, "defensive_rating": 100, "pace": 98},
+                    {"game_id": "g3", "team_id": 2, "game_date": "2025-01-03", "points": 98, "rebounds": 39, "assists": 19, "turnovers": 11, "offensive_rating": 109, "defensive_rating": 101, "pace": 98},
+                ]
+            ),
+        ],
+        ignore_index=True,
+    )
+
+    rows = compute_team_daily_feature_rows(stats, games)
+    team_one_g2_rows = [row for row in rows if row["team_id"] == 1 and str(row["feature_date"]) == "2025-01-03"]
+    assert len(team_one_g2_rows) == 1
+    assert team_one_g2_rows[0]["games_played"] == 1

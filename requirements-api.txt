@@ -1,0 +1,16 @@
+nba_api
+pandas
+numpy
+sqlalchemy
+psycopg2-binary
+python-dotenv
+fastapi
+uvicorn
+pydantic
+scikit-learn
+lightgbm
+joblib
+matplotlib
+pytest
+httpx
+sqlglot
