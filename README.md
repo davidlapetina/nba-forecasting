@@ -44,7 +44,6 @@ Predictions, ELO history, player cross-checks, chatbot analytics
   - matchup prediction UI
   - local Ollama-backed natural-language analytics
 - Daily refresh and weekly retraining jobs via Docker Compose profiles
-- A local PostgreSQL snapshot so the historical database can be restored without repeating the long backfill
 
 ## Core Design
 
