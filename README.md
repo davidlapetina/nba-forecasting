@@ -66,26 +66,6 @@ The classifier then combines those forecasts with rolling historical features an
 
 Franchise ELO starts at `2500` for each franchise's first recorded game. Ratings update after every played game, and the full pregame/postgame series is stored in `team_elo_history`. The pregame value is copied into feature tables for leakage-safe model training.
 
-## Current Data Snapshot
-
-Manual PostgreSQL dumps belong under `data/snapshots/`.
-
-This workspace currently has a local full-history snapshot at:
-
-```bash
-data/snapshots/nba_predictor_2026-05-16.dump
-```
-
-At the time of that snapshot, the local database contained:
-
-- `80` player seasons from `1946-47` through `2025-26`
-- `1,389,880` player-game rows
-- `5,121` players
-- `45` historical team IDs
-- full team/game history already ingested for model training and ELO reconstruction
-
-The binary dump is ignored by Git by default because it is a generated artifact. Treat snapshots as private/local recovery artifacts unless you have separately confirmed redistribution rights for the underlying data.
-
 ## Prerequisites
 
 Required:
