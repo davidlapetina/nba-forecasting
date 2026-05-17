@@ -1,4 +1,4 @@
-.PHONY: install db-up api dashboard ingest ingest-officials ingest-players ingest-player-availability ingest-play-by-play ingest-rosters backfill backfill-players backfill-play-by-play backfill-officials features forecast train evaluate predict refresh refresh-full test full-pipeline
+.PHONY: install db-up api dashboard ingest ingest-officials ingest-players ingest-player-availability ingest-play-by-play ingest-rosters backfill backfill-playoffs backfill-players backfill-players-playoffs backfill-play-by-play backfill-officials features forecast train evaluate predict refresh refresh-full test full-pipeline
 
 SEASON ?= 2025-26
 START_SEASON ?= 1946-47
@@ -20,9 +20,13 @@ api:
 ingest:
 	$(PYTHON) -m nba_predictor.ingest.ingest_schedule --season $(SEASON)
 	$(PYTHON) -m nba_predictor.ingest.ingest_games --season $(SEASON)
+	$(PYTHON) -m nba_predictor.ingest.ingest_games --season $(SEASON) --season-type Playoffs
 	$(PYTHON) -m nba_predictor.ingest.ingest_team_logs --season $(SEASON)
+	$(PYTHON) -m nba_predictor.ingest.ingest_team_logs --season $(SEASON) --season-type Playoffs
 	$(PYTHON) -m nba_predictor.ingest.ingest_box_scores --season $(SEASON)
+	$(PYTHON) -m nba_predictor.ingest.ingest_box_scores --season $(SEASON) --season-type Playoffs
 	$(PYTHON) -m nba_predictor.ingest.ingest_players --season $(SEASON)
+	$(PYTHON) -m nba_predictor.ingest.ingest_players --season $(SEASON) --season-type Playoffs
 	$(PYTHON) -m nba_predictor.ingest.ingest_rosters --season $(SEASON)
 
 ingest-officials:
@@ -43,8 +47,14 @@ ingest-rosters:
 backfill:
 	$(PYTHON) -m nba_predictor.ingest.ingest_history --start-season $(START_SEASON) --end-season $(END_SEASON)
 
+backfill-playoffs:
+	$(PYTHON) -m nba_predictor.ingest.ingest_history --start-season $(START_SEASON) --end-season $(END_SEASON) --playoffs-only
+
 backfill-players:
 	$(PYTHON) -m nba_predictor.ingest.ingest_player_history --start-season $(START_SEASON) --end-season $(END_SEASON)
+
+backfill-players-playoffs:
+	$(PYTHON) -m nba_predictor.ingest.ingest_player_history --start-season $(START_SEASON) --end-season $(END_SEASON) --playoffs-only
 
 backfill-play-by-play:
 	$(PYTHON) -m nba_predictor.ingest.ingest_play_by_play --start-season $(START_SEASON) --end-season $(END_SEASON)

@@ -72,6 +72,70 @@ def test_daily_features_emit_one_row_for_same_day_doubleheader() -> None:
     assert team_one_g2_rows[0]["games_played"] == 1
 
 
+def test_daily_features_use_prior_playoff_results() -> None:
+    games = pd.DataFrame(
+        [
+            {
+                "game_id": "regular",
+                "game_date": "2026-04-10",
+                "home_team_id": 1,
+                "away_team_id": 2,
+                "home_score": 100,
+                "away_score": 90,
+                "home_team_win": True,
+                "season_type": "Regular Season",
+            },
+            {
+                "game_id": "playoff_1",
+                "game_date": "2026-04-20",
+                "home_team_id": 1,
+                "away_team_id": 2,
+                "home_score": 102,
+                "away_score": 98,
+                "home_team_win": True,
+                "season_type": "Playoffs",
+            },
+            {
+                "game_id": "playoff_2",
+                "game_date": "2026-04-22",
+                "home_team_id": 2,
+                "away_team_id": 1,
+                "home_score": 99,
+                "away_score": 101,
+                "home_team_win": False,
+                "season_type": "Playoffs",
+            },
+        ]
+    )
+    common = {
+        "rebounds": 40,
+        "assists": 20,
+        "turnovers": 10,
+        "offensive_rating": 110,
+        "defensive_rating": 100,
+        "pace": 98,
+    }
+    stats = pd.DataFrame(
+        [
+            {"game_id": "regular", "team_id": 1, "game_date": "2026-04-10", "points": 100, **common},
+            {"game_id": "regular", "team_id": 2, "game_date": "2026-04-10", "points": 90, **common},
+            {"game_id": "playoff_1", "team_id": 1, "game_date": "2026-04-20", "points": 102, **common},
+            {"game_id": "playoff_1", "team_id": 2, "game_date": "2026-04-20", "points": 98, **common},
+            {"game_id": "playoff_2", "team_id": 2, "game_date": "2026-04-22", "points": 99, **common},
+            {"game_id": "playoff_2", "team_id": 1, "game_date": "2026-04-22", "points": 101, **common},
+        ]
+    )
+
+    rows = compute_team_daily_feature_rows(stats, games)
+    team_one_second_playoff = next(
+        row for row in rows if row["team_id"] == 1 and str(row["feature_date"]) == "2026-04-22"
+    )
+
+    assert team_one_second_playoff["games_played"] == 2
+    assert team_one_second_playoff["last_10_win_pct"] == 1.0
+    assert team_one_second_playoff["avg_points_last_10"] == 101.0
+
+
 def test_game_features_include_prior_zero_minute_rate() -> None:
     games = pd.DataFrame(
         [

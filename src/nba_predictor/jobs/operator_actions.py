@@ -27,9 +27,13 @@ def run_ingest(season: str) -> dict[str, int]:
         "schedule": ingest_schedule(season),
         "upcoming_schedule": ingest_upcoming_schedule(date.today()),
         "games": ingest_games(season),
+        "playoff_games": ingest_games(season, "Playoffs"),
         "team_logs": ingest_team_logs(season),
+        "playoff_team_logs": ingest_team_logs(season, "Playoffs"),
         "box_scores": ingest_box_scores(season),
+        "playoff_box_scores": ingest_box_scores(season, "Playoffs"),
         "player_logs": ingest_players(season),
+        "playoff_player_logs": ingest_players(season, "Playoffs"),
         "player_availability_comments": ingest_player_availability_comments(season),
         "play_by_play_events": ingest_play_by_play(season),
     }

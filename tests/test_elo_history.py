@@ -69,6 +69,39 @@ def test_elo_history_carries_forward_previous_postgame_rating() -> None:
     assert team_one_game_two["pregame_elo"] == team_one_game_one["postgame_elo"]
 
 
+def test_elo_history_carries_regular_season_rating_into_playoffs() -> None:
+    games = pd.DataFrame(
+        [
+            {
+                "game_id": "regular",
+                "game_date": "2026-04-10",
+                "home_team_id": 1,
+                "away_team_id": 2,
+                "home_score": 101,
+                "away_score": 95,
+                "home_team_win": True,
+                "season_type": "Regular Season",
+            },
+            {
+                "game_id": "playoff",
+                "game_date": "2026-04-20",
+                "home_team_id": 1,
+                "away_team_id": 2,
+                "home_score": 99,
+                "away_score": 97,
+                "home_team_win": True,
+                "season_type": "Playoffs",
+            },
+        ]
+    )
+
+    rows = compute_team_elo_history_rows(games)
+    regular = next(row for row in rows if row["game_id"] == "regular" and row["team_id"] == 1)
+    playoff = next(row for row in rows if row["game_id"] == "playoff" and row["team_id"] == 1)
+
+    assert playoff["pregame_elo"] == regular["postgame_elo"]
+
+
 def test_elo_history_is_zero_sum_per_game() -> None:
     games = pd.DataFrame(
         [

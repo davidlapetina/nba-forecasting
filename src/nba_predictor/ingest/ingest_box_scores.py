@@ -14,12 +14,12 @@ def _maybe_float(value: Any) -> float | None:
     return None if value is None or pd.isna(value) else float(value)
 
 
-def ingest_box_scores(season: str | None = None) -> int:
+def ingest_box_scores(season: str | None = None, season_type: str = "Regular Season") -> int:
     if season is None:
         raise ValueError("season is required for bulk advanced team log ingestion")
     client = NBAClient()
     engine = get_engine()
-    advanced = client.fetch_advanced_team_game_logs(season)
+    advanced = client.fetch_advanced_team_game_logs(season, season_type)
     updates: list[dict[str, Any]] = []
     for _, row in advanced.iterrows():
         updates.append(
@@ -91,9 +91,10 @@ def ingest_officials(season: str | None = None) -> int:
 def main() -> None:
     parser = argparse.ArgumentParser(description="Ingest NBA box score advanced metrics")
     parser.add_argument("--season", required=True)
+    parser.add_argument("--season-type", default="Regular Season")
     parser.add_argument("--include-officials", action="store_true")
     args = parser.parse_args()
-    count = ingest_box_scores(args.season)
+    count = ingest_box_scores(args.season, args.season_type)
     print(f"upserted advanced metrics for {count} team rows")
     if args.include_officials:
         official_count = ingest_officials(args.season)

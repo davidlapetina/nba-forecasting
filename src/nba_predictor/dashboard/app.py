@@ -287,11 +287,13 @@ def _team_recent_games(team_id: int, limit: int = 10) -> pd.DataFrame:
         """
         select
             h.game_date,
+            g.season_type,
             case when h.is_home then t2.abbreviation || ' at ' || t1.abbreviation else t1.abbreviation || ' at ' || t2.abbreviation end as matchup,
             case when h.won then 'W' else 'L' end as result,
             round(h.pregame_elo::numeric, 1) as pregame_elo,
             round(h.postgame_elo::numeric, 1) as postgame_elo
         from team_elo_history h
+        join games g on g.game_id = h.game_id
         join teams t1 on t1.team_id = h.team_id
         join teams t2 on t2.team_id = h.opponent_team_id
         where h.team_id = :team_id
@@ -325,7 +327,9 @@ def _team_elo_by_season(team_id: int) -> pd.DataFrame:
             max(h.postgame_elo) filter (where h.game_date = season_last.last_game_date) as closing_elo,
             min(h.postgame_elo) as low_elo,
             max(h.postgame_elo) as high_elo,
-            count(*) as games
+            count(*) as games,
+            count(*) filter (where g.season_type = 'Regular Season') as regular_games,
+            count(*) filter (where g.season_type = 'Playoffs') as playoff_games
         from team_elo_history h
         join games g on g.game_id = h.game_id
         join (
@@ -393,7 +397,7 @@ def _team_player_seasons(team_id: int) -> list[str]:
     return frame["season"].tolist()
 
 
-def _team_player_summary(team_id: int, season: str) -> pd.DataFrame:
+def _team_player_summary(team_id: int, season: str, season_type: str | None) -> pd.DataFrame:
     return _read_frame(
         """
         select
@@ -405,11 +409,14 @@ def _team_player_summary(team_id: int, season: str) -> pd.DataFrame:
             round(avg(s.minutes)::numeric, 1) as avg_minutes
         from player_game_stats s
         join players p on p.player_id = s.player_id
-        where s.team_id = :team_id and s.season = :season
+        where s.team_id = :team_id
+          and s.season = :season
+          and (:season_type is null or s.season_type = :season_type)
+          and coalesce(s.minutes, 0) > 0
         group by p.player_id, p.full_name
         order by avg_points desc nulls last, games desc, p.full_name
         """,
-        {"team_id": team_id, "season": season},
+        {"team_id": team_id, "season": season, "season_type": season_type},
     )
 
 
@@ -448,7 +455,7 @@ def _player_seasons(player_id: int) -> list[str]:
     return frame["season"].tolist()
 
 
-def _player_season_summary(player_id: int, season: str) -> pd.DataFrame:
+def _player_season_summary(player_id: int, season: str, season_type: str | None) -> pd.DataFrame:
     return _read_frame(
         """
         select
@@ -459,17 +466,21 @@ def _player_season_summary(player_id: int, season: str) -> pd.DataFrame:
             round(avg(assists)::numeric, 1) as avg_assists,
             round(avg(plus_minus)::numeric, 1) as avg_plus_minus
         from player_game_stats
-        where player_id = :player_id and season = :season
+        where player_id = :player_id
+          and season = :season
+          and (:season_type is null or season_type = :season_type)
+          and coalesce(minutes, 0) > 0
         """,
-        {"player_id": player_id, "season": season},
+        {"player_id": player_id, "season": season, "season_type": season_type},
     )
 
 
-def _player_recent_games(player_id: int, season: str) -> pd.DataFrame:
+def _player_recent_games(player_id: int, season: str, season_type: str | None) -> pd.DataFrame:
     return _read_frame(
         """
         select
             game_date,
+            season_type,
             matchup,
             case when won then 'W' else 'L' end as result,
             minutes,
@@ -478,33 +489,40 @@ def _player_recent_games(player_id: int, season: str) -> pd.DataFrame:
             assists,
             plus_minus
         from player_game_stats
-        where player_id = :player_id and season = :season
+        where player_id = :player_id
+          and season = :season
+          and (:season_type is null or season_type = :season_type)
         order by game_date desc, game_id desc
         limit 15
         """,
-        {"player_id": player_id, "season": season},
+        {"player_id": player_id, "season": season, "season_type": season_type},
     )
 
 
-def _player_scoring_series(player_id: int, season: str) -> pd.DataFrame:
+def _player_scoring_series(player_id: int, season: str, season_type: str | None) -> pd.DataFrame:
     return _read_frame(
         """
         select game_date, points, rebounds, assists
         from player_game_stats
-        where player_id = :player_id and season = :season
+        where player_id = :player_id
+          and season = :season
+          and (:season_type is null or season_type = :season_type)
+          and coalesce(minutes, 0) > 0
         order by game_date, game_id
         """,
-        {"player_id": player_id, "season": season},
+        {"player_id": player_id, "season": season, "season_type": season_type},
     )
 
 
-def _team_player_crosscheck(team_id: int, season: str) -> pd.DataFrame:
+def _team_player_crosscheck(team_id: int, season: str, season_type: str | None) -> pd.DataFrame:
     return _read_frame(
         """
         with player_game_totals as (
             select game_id, team_id, sum(points) as player_points
             from player_game_stats
-            where team_id = :team_id and season = :season
+            where team_id = :team_id
+              and season = :season
+              and (:season_type is null or season_type = :season_type)
             group by game_id, team_id
         )
         select
@@ -515,7 +533,7 @@ def _team_player_crosscheck(team_id: int, season: str) -> pd.DataFrame:
         from player_game_totals p
         join team_game_stats t on t.game_id = p.game_id and t.team_id = p.team_id
         """,
-        {"team_id": team_id, "season": season},
+        {"team_id": team_id, "season": season, "season_type": season_type},
     )
 
 
@@ -534,6 +552,10 @@ def _team_coach_summary(team_id: int, season: str) -> pd.DataFrame:
         """,
         {"team_id": team_id, "season": season},
     )
+
+
+def _season_type_options() -> dict[str, str | None]:
+    return {"All games": None, "Regular season": "Regular Season", "Playoffs": "Playoffs"}
 
 
 def _render_result_strip(results: str) -> str:
@@ -598,7 +620,14 @@ def render_players_tab() -> None:
         st.info("No player seasons available.")
         return
     season = st.selectbox("Season", seasons, key=f"player_season_detail_{player_id}")
-    summary = _player_season_summary(player_id, season).iloc[0]
+    season_type_label = st.segmented_control(
+        "Game type",
+        list(_season_type_options()),
+        default="All games",
+        key=f"player_season_type_{player_id}_{season}",
+    )
+    season_type = _season_type_options()[season_type_label or "All games"]
+    summary = _player_season_summary(player_id, season, season_type).iloc[0]
     st.markdown(f"#### {selected_name}")
     cols = st.columns(6)
     cols[0].metric("Games", int(summary["games"]))
@@ -610,10 +639,15 @@ def render_players_tab() -> None:
     series_col, games_col = st.columns([1.2, 1])
     with series_col:
         st.markdown("#### Game Trend")
-        st.line_chart(_player_scoring_series(player_id, season), x="game_date", y=["points", "rebounds", "assists"], height=280)
+        st.line_chart(
+            _player_scoring_series(player_id, season, season_type),
+            x="game_date",
+            y=["points", "rebounds", "assists"],
+            height=280,
+        )
     with games_col:
         st.markdown("#### Recent Games")
-        st.dataframe(_player_recent_games(player_id, season), use_container_width=True, hide_index=True)
+        st.dataframe(_player_recent_games(player_id, season, season_type), use_container_width=True, hide_index=True)
 
 
 def render_upcoming_tab() -> None:
@@ -730,7 +764,14 @@ def render_team_detail(team_code: str, overview: pd.DataFrame | None = None) -> 
             player_seasons,
             key=f"player_season_{row['abbreviation']}",
         )
-        crosscheck = _team_player_crosscheck(int(row["team_id"]), selected_player_season)
+        team_season_type_label = st.segmented_control(
+            "Player game type",
+            list(_season_type_options()),
+            default="All games",
+            key=f"team_player_season_type_{row['abbreviation']}_{selected_player_season}",
+        )
+        team_season_type = _season_type_options()[team_season_type_label or "All games"]
+        crosscheck = _team_player_crosscheck(int(row["team_id"]), selected_player_season, team_season_type)
         if not crosscheck.empty and pd.notna(crosscheck.iloc[0]["team_avg_points"]):
             totals = crosscheck.iloc[0]
             metric_cols = st.columns(4)
@@ -741,7 +782,7 @@ def render_team_detail(team_code: str, overview: pd.DataFrame | None = None) -> 
         roster_col, coach_col = st.columns([1.45, 1])
         with roster_col:
             st.dataframe(
-                _team_player_summary(int(row["team_id"]), selected_player_season),
+                _team_player_summary(int(row["team_id"]), selected_player_season, team_season_type),
                 use_container_width=True,
                 hide_index=True,
             )

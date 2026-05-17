@@ -231,10 +231,17 @@ To rebuild the historical team/game layer from league start:
 make backfill START_SEASON=1946-47 END_SEASON=2025-26
 ```
 
+To import playoff games, team logs, player logs, and advanced metrics for an existing historical range:
+
+```bash
+make backfill-playoffs START_SEASON=1946-47 END_SEASON=2025-26
+```
+
 To backfill historical player game logs:
 
 ```bash
 make backfill-players START_SEASON=1946-47 END_SEASON=2025-26
+make backfill-players-playoffs START_SEASON=1946-47 END_SEASON=2025-26
 ```
 
 To enrich one season with explicit box-score availability comments such as DNP annotations:
@@ -265,6 +272,7 @@ make ingest-rosters SEASON=2025-26
 Notes:
 
 - Historical backfill is idempotent.
+- The standard daily refresh ingests both regular-season and playoff logs for the active season.
 - Player availability comment enrichment requires one player-box-score request per completed game, but it keeps per-game sync state so later daily refreshes only fetch newly completed games.
 - NBA play-by-play coverage begins with the `1996-97` season; earlier seasons cannot be populated from this source.
 - Full historical play-by-play backfill is much slower than game/player backfill because it makes one request per completed game.

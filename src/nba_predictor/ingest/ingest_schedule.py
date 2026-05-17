@@ -121,7 +121,6 @@ def ingest_schedule(season: str) -> int:
             "home_score",
             "away_score",
             "home_team_win",
-            "season_type",
         ],
     )
 
