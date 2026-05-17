@@ -282,7 +282,7 @@ def _team_overview() -> pd.DataFrame:
     )
 
 
-def _team_recent_games(team_id: int, limit: int = 10) -> pd.DataFrame:
+def _team_recent_games(team_id: int, season_type: str | None, limit: int = 10) -> pd.DataFrame:
     return _read_frame(
         """
         select
@@ -297,10 +297,11 @@ def _team_recent_games(team_id: int, limit: int = 10) -> pd.DataFrame:
         join teams t1 on t1.team_id = h.team_id
         join teams t2 on t2.team_id = h.opponent_team_id
         where h.team_id = :team_id
+          and (:season_type is null or g.season_type = :season_type)
         order by h.game_date desc, h.game_id desc
         limit :limit
         """,
-        {"team_id": team_id, "limit": limit},
+        {"team_id": team_id, "season_type": season_type, "limit": limit},
     )
 
 
@@ -743,7 +744,14 @@ def render_team_detail(team_code: str, overview: pd.DataFrame | None = None) -> 
     detail_cols = st.columns([1.3, 1])
     with detail_cols[0]:
         st.markdown("#### Recent Games")
-        recent = _team_recent_games(int(row["team_id"]))
+        recent_game_type_label = st.segmented_control(
+            "Recent game type",
+            list(_season_type_options()),
+            default="All games",
+            key=f"team_recent_game_type_{row['abbreviation']}",
+        )
+        recent_game_type = _season_type_options()[recent_game_type_label or "All games"]
+        recent = _team_recent_games(int(row["team_id"]), recent_game_type)
         st.dataframe(recent, use_container_width=True, hide_index=True)
     with detail_cols[1]:
         st.markdown("#### Saved Predictions")
