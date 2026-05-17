@@ -71,7 +71,7 @@ predict:
 	$(PYTHON) -m nba_predictor.predict.predict_games --date $(PREDICT_DATE)
 
 dashboard:
-	$(PYTHON) -m streamlit run src/nba_predictor/dashboard/app.py
+	$(PYTHON) -m streamlit run src/nba_predictor/dashboard/app.py --server.headless true --browser.gatherUsageStats false
 
 refresh:
 	$(PYTHON) -m nba_predictor.jobs.refresh_pipeline --season $(SEASON) --predict-date $(PREDICT_DATE) --run-once

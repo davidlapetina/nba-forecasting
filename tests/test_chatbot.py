@@ -54,6 +54,16 @@ def test_heuristic_plan_handles_player_ppg_query() -> None:
     assert plan is not None
     assert plan.mode == "sql"
     assert "player_game_stats" in str(plan.sql)
+    assert "coalesce(s.minutes, 0) > 0" in str(plan.sql)
+
+
+def test_heuristic_plan_handles_player_rebound_query() -> None:
+    plan = _heuristic_plan("Who is the best rebounder in 2026?")
+    assert plan is not None
+    assert plan.mode == "sql"
+    assert "avg_rebounds" in str(plan.sql)
+    assert "2025-26" in str(plan.sql)
+    assert "coalesce(s.minutes, 0) > 0" in str(plan.sql)
 
 
 def test_heuristic_plan_handles_best_team_year_query() -> None:
@@ -68,6 +78,11 @@ def test_heuristic_plan_handles_best_team_year_query() -> None:
 def test_fallback_summary_handles_player_rows() -> None:
     summary = _fallback_summary("sql", [{"full_name": "Jaylen Brown", "games": 71, "avg_points": 28.7}])
     assert summary == "Jaylen Brown leads the result set at 28.7 points per game across 71 games."
+
+
+def test_fallback_summary_handles_player_rebound_rows() -> None:
+    summary = _fallback_summary("sql", [{"full_name": "Nikola Jokic", "games": 70, "avg_rebounds": 12.1}])
+    assert summary == "Nikola Jokic leads the result set at 12.1 rebounds per game across 70 games."
 
 
 def test_fallback_summary_handles_team_record_rows() -> None:

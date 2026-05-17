@@ -159,9 +159,14 @@ def build_matchup_feature_row(engine: Any, home_team_id: int, away_team_id: int,
     }
 
 
-def predict_matchup(home_team_id: int, away_team_id: int, game_date: date) -> dict[str, Any]:
-    engine = get_engine()
-    model, metadata = load_model_bundle()
+def _predict_matchup_with_bundle(
+    engine: Any,
+    model: Any,
+    metadata: dict[str, Any],
+    home_team_id: int,
+    away_team_id: int,
+    game_date: date,
+) -> dict[str, Any]:
     feature_row = build_matchup_feature_row(engine, home_team_id, away_team_id, game_date)
     probability = normalize_probability(model.predict_proba(pd.DataFrame([feature_row])[FEATURE_COLUMNS])[:, 1][0])
     elo_probability = normalize_probability(
@@ -179,6 +184,21 @@ def predict_matchup(home_team_id: int, away_team_id: int, game_date: date) -> di
         "model_name": metadata["model_name"],
         "model_version": metadata["model_version"],
     }
+
+
+def predict_matchup(home_team_id: int, away_team_id: int, game_date: date) -> dict[str, Any]:
+    engine = get_engine()
+    model, metadata = load_model_bundle()
+    return _predict_matchup_with_bundle(engine, model, metadata, home_team_id, away_team_id, game_date)
+
+
+def predict_matchups(matchups: list[tuple[int, int, date]]) -> list[dict[str, Any]]:
+    engine = get_engine()
+    model, metadata = load_model_bundle()
+    return [
+        _predict_matchup_with_bundle(engine, model, metadata, home_team_id, away_team_id, game_date)
+        for home_team_id, away_team_id, game_date in matchups
+    ]
 
 
 def predict_games_for_date(target_date: date) -> int:

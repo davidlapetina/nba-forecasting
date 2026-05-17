@@ -34,7 +34,7 @@ from nba_predictor.jobs.operator_actions import (
     run_train,
     run_upcoming_context,
 )
-from nba_predictor.predict.predict_games import predict_matchup, team_id_for_abbreviation
+from nba_predictor.predict.predict_games import predict_matchup, predict_matchups, team_id_for_abbreviation
 
 st.set_option("client.toolbarMode", "minimal")
 
@@ -142,6 +142,8 @@ def _upcoming_games(limit: int = 20) -> pd.DataFrame:
         select
             g.game_id,
             g.game_date,
+            g.home_team_id,
+            g.away_team_id,
             home.abbreviation as home_team,
             away.abbreviation as away_team
         from games g
@@ -155,6 +157,45 @@ def _upcoming_games(limit: int = 20) -> pd.DataFrame:
         """,
         {"limit": limit},
     )
+
+
+def _upcoming_games_with_predictions(upcoming: pd.DataFrame) -> pd.DataFrame:
+    if upcoming.empty:
+        return upcoming
+    rows = upcoming.copy()
+    try:
+        predictions = predict_matchups(
+            [
+                (
+                    int(row.home_team_id),
+                    int(row.away_team_id),
+                    pd.Timestamp(row.game_date).date(),
+                )
+                for row in rows.itertuples(index=False)
+            ]
+        )
+    except Exception:
+        rows["classifier_home"] = None
+        rows["classifier_winner"] = "Unavailable"
+        rows["elo_home"] = None
+        rows["elo_winner"] = "Unavailable"
+        rows["projected_score"] = "Unavailable"
+        return rows
+    rows["classifier_home"] = [result["home_win_probability"] for result in predictions]
+    rows["classifier_winner"] = [
+        row.home_team if result["predicted_winner_team_id"] == row.home_team_id else row.away_team
+        for row, result in zip(rows.itertuples(index=False), predictions, strict=True)
+    ]
+    rows["elo_home"] = [result["elo_home_win_probability"] for result in predictions]
+    rows["elo_winner"] = [
+        row.home_team if result["elo_predicted_winner_team_id"] == row.home_team_id else row.away_team
+        for row, result in zip(rows.itertuples(index=False), predictions, strict=True)
+    ]
+    rows["projected_score"] = [
+        f"{result['forecasted_home_points']:.1f} - {result['forecasted_away_points']:.1f}"
+        for result in predictions
+    ]
+    return rows
 
 
 def _latest_team_context(team_code: str) -> pd.DataFrame:
@@ -577,11 +618,41 @@ def render_players_tab() -> None:
 
 def render_upcoming_tab() -> None:
     st.subheader("Upcoming Games")
-    upcoming = _upcoming_games()
+    upcoming = _upcoming_games_with_predictions(_upcoming_games())
     if upcoming.empty:
         st.info("No future games are currently stored in the schedule.")
         return
-    st.dataframe(upcoming, use_container_width=True, hide_index=True)
+    display_upcoming = upcoming[
+        [
+            "game_date",
+            "away_team",
+            "home_team",
+            "classifier_home",
+            "classifier_winner",
+            "elo_home",
+            "elo_winner",
+            "projected_score",
+        ]
+    ].copy()
+    display_upcoming["classifier_home"] = display_upcoming["classifier_home"].map(
+        lambda value: None if pd.isna(value) else f"{value:.1%}"
+    )
+    display_upcoming["elo_home"] = display_upcoming["elo_home"].map(
+        lambda value: None if pd.isna(value) else f"{value:.1%}"
+    )
+    display_upcoming = display_upcoming.rename(
+        columns={
+            "game_date": "Date",
+            "away_team": "Away",
+            "home_team": "Home",
+            "classifier_home": "Classifier Home",
+            "classifier_winner": "Classifier Pick",
+            "elo_home": "ELO Home",
+            "elo_winner": "ELO Pick",
+            "projected_score": "Projected Score",
+        }
+    )
+    st.dataframe(display_upcoming, use_container_width=True, hide_index=True)
     labels = [f"{row.game_date} - {row.away_team} at {row.home_team}" for row in upcoming.itertuples(index=False)]
     selected_index = st.selectbox("Game", range(len(labels)), format_func=lambda index: labels[index])
     game = upcoming.iloc[selected_index]

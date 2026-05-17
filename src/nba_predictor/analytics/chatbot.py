@@ -180,6 +180,7 @@ def _heuristic_plan(question: str) -> QueryPlan | None:
                 "join players p on p.player_id = s.player_id "
                 "join teams t on t.team_id = s.team_id "
                 f"where t.abbreviation = '{team_code}' and s.season = '{season}' "
+                "and coalesce(s.minutes, 0) > 0 "
                 "group by p.player_id, p.full_name "
                 "order by avg_points desc nulls last, games desc "
                 "limit 10"
@@ -187,6 +188,30 @@ def _heuristic_plan(question: str) -> QueryPlan | None:
             rationale="deterministic player scoring query",
         )
     season_year_match = re.search(r"\b(19\d{2}|20\d{2})\b", question)
+    season_player_rebound_query = any(
+        term in normalized
+        for term in (
+            "best rebounder",
+            "top rebounder",
+            "most rebounds per game",
+            "best rebounds",
+        )
+    )
+    if season_year_match and season_player_rebound_query:
+        season = _season_ending_in(int(season_year_match.group(1)))
+        return QueryPlan(
+            mode="sql",
+            sql=(
+                "select p.full_name, count(*) as games, round(avg(s.rebounds)::numeric, 1) as avg_rebounds "
+                "from player_game_stats s "
+                "join players p on p.player_id = s.player_id "
+                f"where s.season = '{season}' and coalesce(s.minutes, 0) > 0 "
+                "group by p.player_id, p.full_name "
+                "order by avg_rebounds desc nulls last, games desc "
+                "limit 10"
+            ),
+            rationale="deterministic player rebounding query",
+        )
     season_result_query = any(
         term in normalized
         for term in (
@@ -439,6 +464,11 @@ def _fallback_summary(mode: str, rows: list[dict[str, Any]]) -> str:
         return (
             f"{first['full_name']} leads the result set at "
             f"{float(first['avg_points']):.1f} points per game across {int(first['games'])} games."
+        )
+    if {"full_name", "avg_rebounds", "games"} <= set(first):
+        return (
+            f"{first['full_name']} leads the result set at "
+            f"{float(first['avg_rebounds']):.1f} rebounds per game across {int(first['games'])} games."
         )
     if {"abbreviation", "season", "wins", "losses", "win_pct"} <= set(first):
         return (
