@@ -61,8 +61,37 @@ CREATE TABLE IF NOT EXISTS player_game_stats (
     three_point_pct DOUBLE PRECISION,
     free_throw_pct DOUBLE PRECISION,
     plus_minus DOUBLE PRECISION,
+    availability_comment TEXT,
     created_at TIMESTAMP DEFAULT NOW(),
     UNIQUE(game_id, player_id)
+);
+
+CREATE TABLE IF NOT EXISTS player_availability_sync_state (
+    game_id TEXT PRIMARY KEY,
+    fetched_at TIMESTAMP NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS team_injury_reports (
+    id BIGSERIAL PRIMARY KEY,
+    report_date DATE NOT NULL,
+    report_url TEXT NOT NULL,
+    team_abbreviation TEXT NOT NULL,
+    player_name TEXT NOT NULL,
+    status TEXT,
+    reason TEXT,
+    created_at TIMESTAMP DEFAULT NOW(),
+    UNIQUE(report_date, report_url, team_abbreviation, player_name)
+);
+
+CREATE TABLE IF NOT EXISTS team_context_summaries (
+    id BIGSERIAL PRIMARY KEY,
+    team_id BIGINT NOT NULL,
+    summary_date DATE NOT NULL,
+    source_kind TEXT NOT NULL,
+    source_payload TEXT NOT NULL,
+    summary TEXT NOT NULL,
+    created_at TIMESTAMP DEFAULT NOW(),
+    UNIQUE(team_id, summary_date, source_kind)
 );
 
 CREATE TABLE IF NOT EXISTS play_by_play_events (
@@ -233,6 +262,9 @@ CREATE TABLE IF NOT EXISTS game_features (
     home_avg_def_rating_last_10 DOUBLE PRECISION,
     away_avg_def_rating_last_10 DOUBLE PRECISION,
     def_rating_diff DOUBLE PRECISION,
+    home_recent_zero_minute_rate DOUBLE PRECISION,
+    away_recent_zero_minute_rate DOUBLE PRECISION,
+    recent_zero_minute_rate_diff DOUBLE PRECISION,
     home_elo DOUBLE PRECISION,
     away_elo DOUBLE PRECISION,
     elo_diff DOUBLE PRECISION,

@@ -16,3 +16,4 @@ pytest
 httpx
 streamlit
 sqlglot
+pypdf

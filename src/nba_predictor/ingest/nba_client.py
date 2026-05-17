@@ -6,11 +6,13 @@ from typing import Any, TypeVar
 
 import pandas as pd
 from nba_api.stats.endpoints import (
+    boxscoretraditionalv3,
     boxscoresummaryv2,
     commonteamroster,
     leaguegamelog,
     playbyplayv3,
     scheduleleaguev2,
+    scoreboardv3,
     teamgamelogs,
 )
 from nba_api.stats.library.parameters import MeasureTypePlayerGameLogs
@@ -104,9 +106,17 @@ class NBAClient:
         endpoint = self._call(lambda: scheduleleaguev2.ScheduleLeagueV2(season=season))
         return endpoint.season_games.get_data_frame()
 
+    def fetch_daily_scoreboard(self, game_date: str) -> tuple[pd.DataFrame, pd.DataFrame]:
+        endpoint = self._call(lambda: scoreboardv3.ScoreboardV3(game_date=game_date))
+        return endpoint.game_header.get_data_frame(), endpoint.line_score.get_data_frame()
+
     def fetch_game_officials(self, game_id: str) -> pd.DataFrame:
         endpoint = self._call(lambda: boxscoresummaryv2.BoxScoreSummaryV2(game_id=game_id))
         return endpoint.officials.get_data_frame()
+
+    def fetch_player_box_score(self, game_id: str) -> pd.DataFrame:
+        endpoint = self._call(lambda: boxscoretraditionalv3.BoxScoreTraditionalV3(game_id=game_id))
+        return endpoint.player_stats.get_data_frame()
 
     def fetch_play_by_play(self, game_id: str) -> pd.DataFrame:
         endpoint = self._call(lambda: playbyplayv3.PlayByPlayV3(game_id=game_id))

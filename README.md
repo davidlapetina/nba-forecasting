@@ -28,8 +28,8 @@ Predictions, ELO history, player cross-checks, chatbot analytics
 
 ## What Is Included
 
-- PostgreSQL schema for teams, games, team stats, player stats, play-by-play events, referees, rosters, coaches, forecasts, features, ELO history, predictions, and scheduler sync state
-- Historical NBA ingestion from `nba_api`
+- PostgreSQL schema for teams, games, team stats, player stats, player availability comments, play-by-play events, team context summaries, referees, rosters, coaches, forecasts, features, ELO history, predictions, and scheduler sync state
+- Historical NBA ingestion from `nba_api`, plus near-term daily-scoreboard refreshes for active upcoming games
 - Franchise ELO history from the first recorded game onward
 - Leakage-safe rolling team features and pregame game features
 - TimesFM metric forecasting with a rolling-average fallback if TimesFM is unavailable
@@ -38,6 +38,7 @@ Predictions, ELO history, player cross-checks, chatbot analytics
 - Streamlit dashboard with:
   - one team tile per franchise
   - player search and season detail dashboard
+  - upcoming games with saved team context summaries
   - all-time and seasonal ELO charts
   - recent games
   - saved predictions
@@ -62,12 +63,28 @@ TimesFM forecasts numeric univariate team signals such as:
 - field-goal percentage
 - three-point percentage
 
-The classifier then combines those forecasts with rolling historical features and predicts the probability that the home team wins. Direct matchup predictions also expose the independent ELO baseline probability so the learned model can be compared against a simpler rating signal instead of hiding ELO only inside the feature set.
+The classifier then combines forecasts with leakage-safe rolling historical features and predicts the probability that the home team wins. Direct matchup predictions also expose the independent ELO baseline probability so the learned model can be compared against a simpler rating signal instead of hiding ELO only inside the feature set.
+
+The system now stores richer player availability data:
+
+- historical zero-minute player-game rows from the season logs
+- explicit postgame DNP-style comments from per-game player box scores when that enrichment job is run
+- advisory upcoming-team summaries generated from the latest official NBA injury-report PDF plus recent headline feeds
+
+The advisory summaries are visible in the dashboard but are **not** direct classifier inputs. A recent zero-minute availability feature was tested and rejected from the active model because it did not improve validation.
 
 Franchise ELO starts at `2500` for each franchise's first recorded game. Ratings update after every played game, and the full pregame/postgame series is stored in `team_elo_history`. The pregame value is copied into feature tables for leakage-safe model training.
 
 Historical franchise labels are stored separately in `team_season_identities`, so analytics can show season-correct abbreviations such as `SEA`, `NJN`, and `VAN`, plus same-code historical names such as `Washington Bullets` and `Charlotte Bobcats`, while the core `teams` table still keeps each current franchise identity for present-day operations.
 `make features` refreshes this table from already stored local player logs, so rebuilding historical labels does not require another network backfill.
+
+## Current Status
+
+- Historical play-by-play ingestion is implemented for the supported era beginning in `1996-97`, with resumable per-game sync state.
+- Player dashboards, optional Superset support, upcoming-game display, official injury summaries, and headline summaries are implemented.
+- Daily refresh now updates the season schedule, near-term daily scoreboard feed, player availability comments, and play-by-play before rebuilding features and predictions.
+- Explicit DNP comments are stored when available from per-game box scores; the enrichment is resumable and only revisits newly completed games after the initial backfill.
+- Injury/news summaries are advisory dashboard context for now. They are intentionally not fed directly into the classifier until we have enough outcome history to validate a calibrated effect.
 
 ## Prerequisites
 
@@ -187,6 +204,7 @@ Use this path if you want to build the database yourself from NBA.com-backed pub
 
    ```bash
    make ingest SEASON=2025-26
+   make ingest-player-availability SEASON=2025-26
    ```
 
 5. Build model-ready tables and predictions:
@@ -219,6 +237,12 @@ To backfill historical player game logs:
 make backfill-players START_SEASON=1946-47 END_SEASON=2025-26
 ```
 
+To enrich one season with explicit box-score availability comments such as DNP annotations:
+
+```bash
+make ingest-player-availability SEASON=2025-26
+```
+
 To ingest play-by-play for one season or backfill it across the available play-by-play era:
 
 ```bash
@@ -241,11 +265,13 @@ make ingest-rosters SEASON=2025-26
 Notes:
 
 - Historical backfill is idempotent.
+- Player availability comment enrichment requires one player-box-score request per completed game, but it keeps per-game sync state so later daily refreshes only fetch newly completed games.
 - NBA play-by-play coverage begins with the `1996-97` season; earlier seasons cannot be populated from this source.
 - Full historical play-by-play backfill is much slower than game/player backfill because it makes one request per completed game.
 - NBA.com endpoints can be slow, rate-limited, or change over time.
 - Player and team history are much deeper than coach history because the public coach data returned by the roster endpoint is source-dependent.
 - Some advanced metrics are unavailable in early seasons even when the games themselves exist.
+- The latest official injury report and team-news summaries are advisory context for upcoming games; they are not currently used to change win probabilities.
 
 ## Environment Variables
 
@@ -430,6 +456,7 @@ http://localhost:8501
 Main views:
 
 - `Teams`: one tile per franchise with current ELO, last five results, and last game date
+- `Upcoming`: future games plus saved team injury/news context summaries
 - team detail: all-time ELO, season ELO, recent games, saved predictions, player/team reconciliation, coach assignments, team-scoped chat
 - `Matchup`: direct matchup prediction form
 - `Ask Data`: general natural-language analytics with a visible question input, quick prompts, result tables, and generated SQL inspection
@@ -444,6 +471,7 @@ make db-up
 make ingest SEASON=2025-26
 make ingest-officials SEASON=2025-26
 make ingest-players SEASON=2025-26
+make ingest-player-availability SEASON=2025-26
 make ingest-play-by-play SEASON=2025-26
 make ingest-rosters SEASON=2025-26
 make backfill START_SEASON=1946-47 END_SEASON=2025-26

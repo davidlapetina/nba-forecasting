@@ -1,11 +1,20 @@
 from __future__ import annotations
 
+from collections import deque
 from typing import Any
 
 import pandas as pd
 from sqlalchemy import select
 
-from nba_predictor.db import game_features, games, get_engine, team_daily_features, team_game_stats, upsert_rows
+from nba_predictor.db import (
+    game_features,
+    games,
+    get_engine,
+    player_game_stats,
+    team_daily_features,
+    team_game_stats,
+    upsert_rows,
+)
 
 
 def _rest_days_by_team(stats_df: pd.DataFrame) -> dict[tuple[int, pd.Timestamp], int]:
@@ -21,10 +30,49 @@ def _rest_days_by_team(stats_df: pd.DataFrame) -> dict[tuple[int, pd.Timestamp],
     return rest
 
 
+def _recent_zero_minute_rate_by_team(
+    player_stats_df: pd.DataFrame,
+    games_df: pd.DataFrame,
+) -> dict[tuple[int, pd.Timestamp], float]:
+    rates: dict[tuple[int, pd.Timestamp], float] = {}
+    if player_stats_df.empty:
+        return rates
+    stats = player_stats_df.copy()
+    stats["game_date"] = pd.to_datetime(stats["game_date"])
+    requested_dates: dict[int, list[pd.Timestamp]] = {}
+    for row in games_df.itertuples(index=False):
+        game_date = pd.Timestamp(row.game_date)
+        requested_dates.setdefault(int(row.home_team_id), []).append(game_date)
+        requested_dates.setdefault(int(row.away_team_id), []).append(game_date)
+    grouped = {
+        int(team_id): team_rows.sort_values(["game_date", "game_id", "player_id"])
+        for team_id, team_rows in stats.groupby("team_id")
+    }
+    for team_id, dates in requested_dates.items():
+        team_rows = grouped.get(team_id)
+        if team_rows is None:
+            continue
+        rows = list(team_rows.itertuples(index=False))
+        cursor = 0
+        recent: deque[bool] = deque()
+        zero_count = 0
+        for game_date in sorted(set(dates)):
+            while cursor < len(rows) and pd.Timestamp(rows[cursor].game_date) < game_date:
+                is_zero = rows[cursor].minutes == 0
+                recent.append(is_zero)
+                zero_count += int(is_zero)
+                if len(recent) > 100:
+                    zero_count -= int(recent.popleft())
+                cursor += 1
+            rates[(team_id, game_date)] = 0.0 if not recent else zero_count / len(recent)
+    return rates
+
+
 def compute_game_feature_rows(
     games_df: pd.DataFrame,
     daily_features_df: pd.DataFrame,
     stats_df: pd.DataFrame,
+    player_stats_df: pd.DataFrame | None = None,
 ) -> list[dict[str, Any]]:
     if games_df.empty:
         return []
@@ -37,6 +85,10 @@ def compute_game_feature_rows(
         for row in daily.itertuples(index=False)
     }
     rest_map = _rest_days_by_team(stats_df)
+    zero_minute_rate_map = _recent_zero_minute_rate_by_team(
+        player_stats_df if player_stats_df is not None else pd.DataFrame(),
+        games_copy,
+    )
     rows: list[dict[str, Any]] = []
     for game in games_copy.sort_values(["game_date", "game_id"]).itertuples(index=False):
         game_date = pd.Timestamp(game.game_date)
@@ -46,6 +98,8 @@ def compute_game_feature_rows(
             continue
         rest_home = rest_map.get((int(game.home_team_id), game_date), 7)
         rest_away = rest_map.get((int(game.away_team_id), game_date), 7)
+        home_zero_minute_rate = zero_minute_rate_map.get((int(game.home_team_id), game_date), 0.0)
+        away_zero_minute_rate = zero_minute_rate_map.get((int(game.away_team_id), game_date), 0.0)
         rows.append(
             {
                 "game_id": str(game.game_id),
@@ -68,6 +122,9 @@ def compute_game_feature_rows(
                 "home_avg_def_rating_last_10": home.avg_def_rating_last_10,
                 "away_avg_def_rating_last_10": away.avg_def_rating_last_10,
                 "def_rating_diff": home.avg_def_rating_last_10 - away.avg_def_rating_last_10,
+                "home_recent_zero_minute_rate": home_zero_minute_rate,
+                "away_recent_zero_minute_rate": away_zero_minute_rate,
+                "recent_zero_minute_rate_diff": home_zero_minute_rate - away_zero_minute_rate,
                 "home_elo": home.elo_rating,
                 "away_elo": away.elo_rating,
                 "elo_diff": home.elo_rating - away.elo_rating,
@@ -88,7 +145,8 @@ def build_game_features() -> int:
         games_df = pd.read_sql(select(games), conn)
         daily_features_df = pd.read_sql(select(team_daily_features), conn)
         stats_df = pd.read_sql(select(team_game_stats), conn)
-    rows = compute_game_feature_rows(games_df, daily_features_df, stats_df)
+        player_stats_df = pd.read_sql(select(player_game_stats), conn)
+    rows = compute_game_feature_rows(games_df, daily_features_df, stats_df, player_stats_df)
     return upsert_rows(
         engine,
         game_features,

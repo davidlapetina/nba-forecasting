@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import pandas as pd
 
+from nba_predictor.features.build_game_features import compute_game_feature_rows
 from nba_predictor.features.build_team_daily_features import compute_team_daily_feature_rows
 
 
@@ -69,3 +70,41 @@ def test_daily_features_emit_one_row_for_same_day_doubleheader() -> None:
     team_one_g2_rows = [row for row in rows if row["team_id"] == 1 and str(row["feature_date"]) == "2025-01-03"]
     assert len(team_one_g2_rows) == 1
     assert team_one_g2_rows[0]["games_played"] == 1
+
+
+def test_game_features_include_prior_zero_minute_rate() -> None:
+    games = pd.DataFrame(
+        [
+            {"game_id": "g1", "game_date": "2025-01-01", "season": "2024-25", "home_team_id": 1, "away_team_id": 2, "home_team_win": True},
+            {"game_id": "g2", "game_date": "2025-01-03", "season": "2024-25", "home_team_id": 1, "away_team_id": 2, "home_team_win": False},
+        ]
+    )
+    daily = pd.DataFrame(
+        [
+            {"team_id": 1, "feature_date": "2025-01-01", "win_pct": 0.5, "last_10_win_pct": 0.5, "avg_points_last_10": 100, "avg_off_rating_last_10": 110, "avg_def_rating_last_10": 100, "elo_rating": 2500},
+            {"team_id": 2, "feature_date": "2025-01-01", "win_pct": 0.5, "last_10_win_pct": 0.5, "avg_points_last_10": 100, "avg_off_rating_last_10": 110, "avg_def_rating_last_10": 100, "elo_rating": 2500},
+            {"team_id": 1, "feature_date": "2025-01-03", "win_pct": 1.0, "last_10_win_pct": 1.0, "avg_points_last_10": 101, "avg_off_rating_last_10": 111, "avg_def_rating_last_10": 99, "elo_rating": 2510},
+            {"team_id": 2, "feature_date": "2025-01-03", "win_pct": 0.0, "last_10_win_pct": 0.0, "avg_points_last_10": 99, "avg_off_rating_last_10": 109, "avg_def_rating_last_10": 101, "elo_rating": 2490},
+        ]
+    )
+    team_stats = pd.DataFrame(
+        [
+            {"game_id": "g1", "team_id": 1, "game_date": "2025-01-01"},
+            {"game_id": "g1", "team_id": 2, "game_date": "2025-01-01"},
+        ]
+    )
+    player_stats = pd.DataFrame(
+        [
+            {"game_id": "g1", "team_id": 1, "player_id": 1, "game_date": "2025-01-01", "minutes": 0},
+            {"game_id": "g1", "team_id": 1, "player_id": 2, "game_date": "2025-01-01", "minutes": 20},
+            {"game_id": "g1", "team_id": 2, "player_id": 3, "game_date": "2025-01-01", "minutes": 20},
+            {"game_id": "g1", "team_id": 2, "player_id": 4, "game_date": "2025-01-01", "minutes": 20},
+        ]
+    )
+
+    rows = compute_game_feature_rows(games, daily, team_stats, player_stats)
+    second_game = next(row for row in rows if row["game_id"] == "g2")
+
+    assert second_game["home_recent_zero_minute_rate"] == 0.5
+    assert second_game["away_recent_zero_minute_rate"] == 0.0
+    assert second_game["recent_zero_minute_rate_diff"] == 0.5

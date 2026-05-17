@@ -13,7 +13,15 @@ from sqlalchemy import func, select, text
 from nba_predictor.analytics.chatbot import answer_question
 from nba_predictor.api.main import list_predictions
 from nba_predictor.config import settings
-from nba_predictor.db import game_predictions, get_engine, player_game_stats, team_elo_history, team_game_stats, teams
+from nba_predictor.db import (
+    game_predictions,
+    get_engine,
+    player_game_stats,
+    team_context_summaries,
+    team_elo_history,
+    team_game_stats,
+    teams,
+)
 from nba_predictor.jobs.operator_actions import (
     run_evaluate,
     run_features,
@@ -24,6 +32,7 @@ from nba_predictor.jobs.operator_actions import (
     run_refresh,
     run_refresh_full,
     run_train,
+    run_upcoming_context,
 )
 from nba_predictor.predict.predict_games import predict_matchup, team_id_for_abbreviation
 
@@ -125,6 +134,41 @@ def _team_abbreviations() -> list[str]:
     engine = get_engine()
     with engine.connect() as conn:
         return sorted(row.abbreviation for row in conn.execute(select(teams.c.abbreviation)))
+
+
+def _upcoming_games(limit: int = 20) -> pd.DataFrame:
+    return _read_frame(
+        """
+        select
+            g.game_id,
+            g.game_date,
+            home.abbreviation as home_team,
+            away.abbreviation as away_team
+        from games g
+        join teams home on home.team_id = g.home_team_id
+        join teams away on away.team_id = g.away_team_id
+        where g.game_date >= current_date
+          and g.home_score is null
+          and g.away_score is null
+        order by g.game_date, g.game_id
+        limit :limit
+        """,
+        {"limit": limit},
+    )
+
+
+def _latest_team_context(team_code: str) -> pd.DataFrame:
+    return _read_frame(
+        """
+        select c.summary_date, c.source_kind, c.summary
+        from team_context_summaries c
+        join teams t on t.team_id = c.team_id
+        where t.abbreviation = :team_code
+        order by c.summary_date desc, c.created_at desc
+        limit 3
+        """,
+        {"team_code": team_code},
+    )
 
 
 def _chart_path(name: str) -> Path:
@@ -531,6 +575,27 @@ def render_players_tab() -> None:
         st.dataframe(_player_recent_games(player_id, season), use_container_width=True, hide_index=True)
 
 
+def render_upcoming_tab() -> None:
+    st.subheader("Upcoming Games")
+    upcoming = _upcoming_games()
+    if upcoming.empty:
+        st.info("No future games are currently stored in the schedule.")
+        return
+    st.dataframe(upcoming, use_container_width=True, hide_index=True)
+    labels = [f"{row.game_date} - {row.away_team} at {row.home_team}" for row in upcoming.itertuples(index=False)]
+    selected_index = st.selectbox("Game", range(len(labels)), format_func=lambda index: labels[index])
+    game = upcoming.iloc[selected_index]
+    cols = st.columns(2)
+    for column, team_code in zip(cols, [game["home_team"], game["away_team"]], strict=True):
+        with column:
+            st.markdown(f"#### {team_code}")
+            context = _latest_team_context(str(team_code))
+            if context.empty:
+                st.info("No saved context summary yet.")
+            else:
+                st.dataframe(context, use_container_width=True, hide_index=True)
+
+
 def render_team_detail(team_code: str, overview: pd.DataFrame | None = None) -> None:
     overview = overview if overview is not None else _team_overview()
     selected = overview.loc[overview["abbreviation"] == team_code]
@@ -743,6 +808,8 @@ def render_operations_tab() -> None:
         _run_dashboard_operation("Evaluate", run_evaluate)
     if model_cols[2].button("Full pipeline", use_container_width=True):
         _run_dashboard_operation("Full pipeline", lambda: run_full_pipeline(season, predict_date))
+    if st.button("Refresh upcoming injury context", use_container_width=True):
+        _run_dashboard_operation("Refresh upcoming injury context", lambda: run_upcoming_context(predict_date))
 
 
 def _chat_history(history_key: str = "chat_history") -> list[dict[str, Any]]:
@@ -838,13 +905,15 @@ def main() -> None:
     st.markdown('<h1 class="dashboard-title">NBA Predictor</h1>', unsafe_allow_html=True)
     st.markdown('<p class="dashboard-subtitle">Team form, matchup predictions, and local analytics.</p>', unsafe_allow_html=True)
     render_overview()
-    teams_tab, players_tab, matchup_tab, chat_tab, operations_tab, model_tab = st.tabs(
-        ["Teams", "Players", "Matchup", "Ask Data", "Operations", "Model"]
+    teams_tab, players_tab, upcoming_tab, matchup_tab, chat_tab, operations_tab, model_tab = st.tabs(
+        ["Teams", "Players", "Upcoming", "Matchup", "Ask Data", "Operations", "Model"]
     )
     with teams_tab:
         render_teams_tab()
     with players_tab:
         render_players_tab()
+    with upcoming_tab:
+        render_upcoming_tab()
     with matchup_tab:
         render_matchup_tab()
     with chat_tab:

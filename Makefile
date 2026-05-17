@@ -1,4 +1,4 @@
-.PHONY: install db-up api dashboard ingest ingest-officials ingest-players ingest-play-by-play ingest-rosters backfill backfill-players backfill-play-by-play backfill-officials features forecast train evaluate predict refresh refresh-full test full-pipeline
+.PHONY: install db-up api dashboard ingest ingest-officials ingest-players ingest-player-availability ingest-play-by-play ingest-rosters backfill backfill-players backfill-play-by-play backfill-officials features forecast train evaluate predict refresh refresh-full test full-pipeline
 
 SEASON ?= 2025-26
 START_SEASON ?= 1946-47
@@ -30,6 +30,9 @@ ingest-officials:
 
 ingest-players:
 	$(PYTHON) -m nba_predictor.ingest.ingest_players --season $(SEASON)
+
+ingest-player-availability:
+	$(PYTHON) -c "from nba_predictor.ingest.ingest_players import ingest_player_availability_comments; print(ingest_player_availability_comments('$(SEASON)'))"
 
 ingest-play-by-play:
 	$(PYTHON) -m nba_predictor.ingest.ingest_play_by_play --season $(SEASON)

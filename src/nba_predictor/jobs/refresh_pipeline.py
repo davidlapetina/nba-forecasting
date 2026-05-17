@@ -15,10 +15,10 @@ from nba_predictor.features.build_team_season_identities import build_team_seaso
 from nba_predictor.forecast.forecast_team_metrics import forecast_team_metrics
 from nba_predictor.ingest.ingest_box_scores import ingest_box_scores
 from nba_predictor.ingest.ingest_games import ingest_games
-from nba_predictor.ingest.ingest_players import ingest_players
+from nba_predictor.ingest.ingest_players import ingest_player_availability_comments, ingest_players
 from nba_predictor.ingest.ingest_play_by_play import ingest_play_by_play
 from nba_predictor.ingest.ingest_rosters import ingest_rosters
-from nba_predictor.ingest.ingest_schedule import ingest_schedule
+from nba_predictor.ingest.ingest_schedule import ingest_schedule, ingest_upcoming_schedule
 from nba_predictor.ingest.ingest_team_logs import ingest_team_logs
 from nba_predictor.predict.predict_games import predict_games_for_date
 from nba_predictor.train.evaluate_model import evaluate_saved_model
@@ -80,10 +80,12 @@ def run_data_refresh(seasons: list[str], predict_date: date, job_name: str = "da
             counts,
             {
                 "schedule": ingest_schedule(season),
+                "upcoming_schedule": ingest_upcoming_schedule(predict_date),
                 "games": ingest_games(season),
                 "team_logs": ingest_team_logs(season),
                 "box_scores": ingest_box_scores(season),
                 "player_logs": ingest_players(season),
+                "player_availability_comments": ingest_player_availability_comments(season),
                 "play_by_play_events": ingest_play_by_play(season),
             },
         )

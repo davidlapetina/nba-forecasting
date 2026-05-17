@@ -100,8 +100,49 @@ player_game_stats = Table(
     Column("three_point_pct", Float),
     Column("free_throw_pct", Float),
     Column("plus_minus", Float),
+    Column("availability_comment", String),
     Column("created_at", DateTime, server_default=func.now()),
     UniqueConstraint("game_id", "player_id", name="uq_player_game_stats_game_player"),
+)
+
+player_availability_sync_state = Table(
+    "player_availability_sync_state",
+    metadata,
+    Column("game_id", String, primary_key=True),
+    Column("fetched_at", DateTime, nullable=False, server_default=func.now()),
+)
+
+team_injury_reports = Table(
+    "team_injury_reports",
+    metadata,
+    Column("id", BigInteger, primary_key=True, autoincrement=True),
+    Column("report_date", Date, nullable=False),
+    Column("report_url", String, nullable=False),
+    Column("team_abbreviation", String, nullable=False),
+    Column("player_name", String, nullable=False),
+    Column("status", String),
+    Column("reason", String),
+    Column("created_at", DateTime, server_default=func.now()),
+    UniqueConstraint(
+        "report_date",
+        "report_url",
+        "team_abbreviation",
+        "player_name",
+        name="uq_team_injury_reports_report_team_player",
+    ),
+)
+
+team_context_summaries = Table(
+    "team_context_summaries",
+    metadata,
+    Column("id", BigInteger, primary_key=True, autoincrement=True),
+    Column("team_id", BigInteger, nullable=False),
+    Column("summary_date", Date, nullable=False),
+    Column("source_kind", String, nullable=False),
+    Column("source_payload", String, nullable=False),
+    Column("summary", String, nullable=False),
+    Column("created_at", DateTime, server_default=func.now()),
+    UniqueConstraint("team_id", "summary_date", "source_kind", name="uq_team_context_summaries_team_date_kind"),
 )
 
 play_by_play_events = Table(
@@ -293,6 +334,9 @@ game_features = Table(
     Column("home_avg_def_rating_last_10", Float),
     Column("away_avg_def_rating_last_10", Float),
     Column("def_rating_diff", Float),
+    Column("home_recent_zero_minute_rate", Float),
+    Column("away_recent_zero_minute_rate", Float),
+    Column("recent_zero_minute_rate_diff", Float),
     Column("home_elo", Float),
     Column("away_elo", Float),
     Column("elo_diff", Float),

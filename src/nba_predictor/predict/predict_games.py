@@ -14,6 +14,7 @@ from nba_predictor.db import (
     game_predictions,
     games,
     get_engine,
+    player_game_stats,
     team_daily_features,
     team_game_stats,
     team_metric_forecasts,
@@ -89,6 +90,23 @@ def _metric_forecast(engine: Any, team_id: int, game_date: date, metric_name: st
     return fallback if value is None else float(value)
 
 
+def _recent_zero_minute_rate(engine: Any, team_id: int, game_date: date) -> float:
+    stmt = (
+        select(player_game_stats.c.minutes)
+        .where(
+            and_(
+                player_game_stats.c.team_id == team_id,
+                player_game_stats.c.game_date < game_date,
+            )
+        )
+        .order_by(player_game_stats.c.game_date.desc(), player_game_stats.c.game_id.desc())
+        .limit(100)
+    )
+    with engine.connect() as conn:
+        values = [row.minutes for row in conn.execute(stmt)]
+    return 0.0 if not values else sum(int(value == 0) for value in values) / len(values)
+
+
 def build_matchup_feature_row(engine: Any, home_team_id: int, away_team_id: int, game_date: date) -> dict[str, Any]:
     home = _latest_team_feature(engine, home_team_id, game_date)
     away = _latest_team_feature(engine, away_team_id, game_date)
@@ -100,6 +118,8 @@ def build_matchup_feature_row(engine: Any, home_team_id: int, away_team_id: int,
     away_off = _metric_forecast(engine, away_team_id, game_date, "offensive_rating", away["avg_off_rating_last_10"])
     home_def = _metric_forecast(engine, home_team_id, game_date, "defensive_rating", home["avg_def_rating_last_10"])
     away_def = _metric_forecast(engine, away_team_id, game_date, "defensive_rating", away["avg_def_rating_last_10"])
+    home_zero_minute_rate = _recent_zero_minute_rate(engine, home_team_id, game_date)
+    away_zero_minute_rate = _recent_zero_minute_rate(engine, away_team_id, game_date)
     return {
         "home_win_pct": home["win_pct"],
         "away_win_pct": away["win_pct"],
@@ -116,6 +136,9 @@ def build_matchup_feature_row(engine: Any, home_team_id: int, away_team_id: int,
         "home_avg_def_rating_last_10": home["avg_def_rating_last_10"],
         "away_avg_def_rating_last_10": away["avg_def_rating_last_10"],
         "def_rating_diff": home["avg_def_rating_last_10"] - away["avg_def_rating_last_10"],
+        "home_recent_zero_minute_rate": home_zero_minute_rate,
+        "away_recent_zero_minute_rate": away_zero_minute_rate,
+        "recent_zero_minute_rate_diff": home_zero_minute_rate - away_zero_minute_rate,
         "home_elo": home["elo_rating"],
         "away_elo": away["elo_rating"],
         "elo_diff": home["elo_rating"] - away["elo_rating"],
