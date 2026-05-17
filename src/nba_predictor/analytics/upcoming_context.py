@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import re
-from datetime import date
+from datetime import date, datetime
 from io import BytesIO
 from urllib.parse import quote_plus
 from xml.etree import ElementTree
@@ -33,10 +33,15 @@ def _get(url: str, timeout_seconds: float) -> httpx.Response:
 
 
 def latest_injury_report_url(html: str) -> str:
-    urls = re.findall(r"href=[\"']([^\"']+\.pdf)[\"']", html, flags=re.IGNORECASE)
-    if not urls:
+    candidates: list[tuple[datetime, str]] = []
+    for url in re.findall(r"href=[\"']([^\"']+\.pdf)[\"']", html, flags=re.IGNORECASE):
+        match = re.search(r"Injury-Report_(\d{4}-\d{2}-\d{2})_(\d{2}_\d{2}[AP]M)\.pdf$", url)
+        if not match:
+            continue
+        candidates.append((datetime.strptime("_".join(match.groups()), "%Y-%m-%d_%I_%M%p"), url))
+    if not candidates:
         raise ValueError("no injury report PDF links found")
-    return urls[-1]
+    return max(candidates)[1]
 
 
 def extract_pdf_text(content: bytes) -> str:

@@ -4,11 +4,13 @@ from nba_predictor.jobs import operator_actions
 
 def test_latest_injury_report_url_uses_last_pdf_link() -> None:
     html = """
-    <a href="https://example.com/first.pdf">first</a>
-    <a href="https://example.com/latest.pdf">latest</a>
+    <a href="https://example.com/unrelated.pdf">unrelated</a>
+    <a href="https://example.com/referee/injury/Injury-Report_2026-05-17_07_15AM.pdf">older</a>
+    <a href="https://example.com/referee/injury/Injury-Report_2026-05-17_07_30AM.pdf">latest</a>
+    <a href="https://example.com/another-unrelated.pdf">another unrelated</a>
     """
 
-    assert latest_injury_report_url(html) == "https://example.com/latest.pdf"
+    assert latest_injury_report_url(html) == "https://example.com/referee/injury/Injury-Report_2026-05-17_07_30AM.pdf"
 
 
 def test_run_upcoming_context_keeps_news_when_injury_refresh_fails(monkeypatch) -> None:
