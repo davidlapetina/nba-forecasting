@@ -29,6 +29,9 @@ class PredictionResponse(BaseModel):
     home_win_probability: float = Field(ge=0.0, le=1.0)
     away_win_probability: float = Field(ge=0.0, le=1.0)
     predicted_winner: str
+    elo_home_win_probability: float | None = Field(default=None, ge=0.0, le=1.0)
+    elo_away_win_probability: float | None = Field(default=None, ge=0.0, le=1.0)
+    elo_predicted_winner: str | None = None
     forecasted_home_points: float | None = None
     forecasted_away_points: float | None = None
 
@@ -44,6 +47,7 @@ class ModelInfoResponse(BaseModel):
     model_version: str
     trained_at: str
     metrics: dict[str, float]
+    elo_baseline_metrics: dict[str, float] | None = None
 
 
 class ChatRequest(BaseModel):
@@ -131,6 +135,11 @@ def predict_matchup(request: MatchupRequest) -> PredictionResponse:
         away_win_probability=result["away_win_probability"],
         predicted_winner=request.home_team.upper()
         if result["predicted_winner_team_id"] == home_team_id
+        else request.away_team.upper(),
+        elo_home_win_probability=result["elo_home_win_probability"],
+        elo_away_win_probability=result["elo_away_win_probability"],
+        elo_predicted_winner=request.home_team.upper()
+        if result["elo_predicted_winner_team_id"] == home_team_id
         else request.away_team.upper(),
         forecasted_home_points=result["forecasted_home_points"],
         forecasted_away_points=result["forecasted_away_points"],

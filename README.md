@@ -28,7 +28,7 @@ Predictions, ELO history, player cross-checks, chatbot analytics
 
 ## What Is Included
 
-- PostgreSQL schema for teams, games, team stats, player stats, referees, rosters, coaches, forecasts, features, ELO history, predictions, and scheduler sync state
+- PostgreSQL schema for teams, games, team stats, player stats, play-by-play events, referees, rosters, coaches, forecasts, features, ELO history, predictions, and scheduler sync state
 - Historical NBA ingestion from `nba_api`
 - Franchise ELO history from the first recorded game onward
 - Leakage-safe rolling team features and pregame game features
@@ -37,6 +37,7 @@ Predictions, ELO history, player cross-checks, chatbot analytics
 - FastAPI endpoints for health, model metadata, predictions, direct matchup prediction, and chatbot queries
 - Streamlit dashboard with:
   - one team tile per franchise
+  - player search and season detail dashboard
   - all-time and seasonal ELO charts
   - recent games
   - saved predictions
@@ -61,7 +62,7 @@ TimesFM forecasts numeric univariate team signals such as:
 - field-goal percentage
 - three-point percentage
 
-The classifier then combines those forecasts with rolling historical features and predicts the probability that the home team wins.
+The classifier then combines those forecasts with rolling historical features and predicts the probability that the home team wins. Direct matchup predictions also expose the independent ELO baseline probability so the learned model can be compared against a simpler rating signal instead of hiding ELO only inside the feature set.
 
 Franchise ELO starts at `2500` for each franchise's first recorded game. Ratings update after every played game, and the full pregame/postgame series is stored in `team_elo_history`. The pregame value is copied into feature tables for leakage-safe model training.
 
@@ -136,6 +137,22 @@ docker compose --profile dashboard --profile scheduler up -d
 
 That is the single command to start "all" services in this project once `.env` exists and the database has either been restored or populated.
 
+### Start Superset For Local BI
+
+Superset is optional and runs under the `analytics` profile with its own metadata database:
+
+```bash
+docker compose --profile analytics up -d superset-db superset
+```
+
+Open `http://localhost:8088` and sign in with `admin` / `admin`. Add the NBA PostgreSQL database with:
+
+```text
+postgresql+psycopg2://nba:nba@postgres:5432/nba_predictor
+```
+
+The `player_season_summary` database view is included for quickly building player-focused Superset charts and dashboards.
+
 ### Start Only the Application Services
 
 If you want the API and dashboard but not the background scheduler containers:
@@ -202,6 +219,13 @@ To backfill historical player game logs:
 make backfill-players START_SEASON=1946-47 END_SEASON=2025-26
 ```
 
+To ingest play-by-play for one season or backfill it across the available play-by-play era:
+
+```bash
+make ingest-play-by-play SEASON=2025-26
+make backfill-play-by-play START_SEASON=1996-97 END_SEASON=2025-26
+```
+
 To ingest referee assignments:
 
 ```bash
@@ -217,6 +241,8 @@ make ingest-rosters SEASON=2025-26
 Notes:
 
 - Historical backfill is idempotent.
+- NBA play-by-play coverage begins with the `1996-97` season; earlier seasons cannot be populated from this source.
+- Full historical play-by-play backfill is much slower than game/player backfill because it makes one request per completed game.
 - NBA.com endpoints can be slow, rate-limited, or change over time.
 - Player and team history are much deeper than coach history because the public coach data returned by the roster endpoint is source-dependent.
 - Some advanced metrics are unavailable in early seasons even when the games themselves exist.
@@ -418,9 +444,11 @@ make db-up
 make ingest SEASON=2025-26
 make ingest-officials SEASON=2025-26
 make ingest-players SEASON=2025-26
+make ingest-play-by-play SEASON=2025-26
 make ingest-rosters SEASON=2025-26
 make backfill START_SEASON=1946-47 END_SEASON=2025-26
 make backfill-players START_SEASON=1946-47 END_SEASON=2025-26
+make backfill-play-by-play START_SEASON=1996-97 END_SEASON=2025-26
 make backfill-officials START_SEASON=1946-47 END_SEASON=2025-26
 make features
 make forecast

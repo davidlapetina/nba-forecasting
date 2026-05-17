@@ -5,7 +5,14 @@ from collections.abc import Callable
 from typing import Any, TypeVar
 
 import pandas as pd
-from nba_api.stats.endpoints import boxscoresummaryv2, commonteamroster, leaguegamelog, scheduleleaguev2, teamgamelogs
+from nba_api.stats.endpoints import (
+    boxscoresummaryv2,
+    commonteamroster,
+    leaguegamelog,
+    playbyplayv3,
+    scheduleleaguev2,
+    teamgamelogs,
+)
 from nba_api.stats.library.parameters import MeasureTypePlayerGameLogs
 from nba_api.stats.static import players as static_players
 from nba_api.stats.static import teams as static_teams
@@ -100,6 +107,10 @@ class NBAClient:
     def fetch_game_officials(self, game_id: str) -> pd.DataFrame:
         endpoint = self._call(lambda: boxscoresummaryv2.BoxScoreSummaryV2(game_id=game_id))
         return endpoint.officials.get_data_frame()
+
+    def fetch_play_by_play(self, game_id: str) -> pd.DataFrame:
+        endpoint = self._call(lambda: playbyplayv3.PlayByPlayV3(game_id=game_id))
+        return endpoint.play_by_play.get_data_frame()
 
     def fetch_team_roster(self, team_id: int, season: str) -> tuple[pd.DataFrame, pd.DataFrame]:
         endpoint = self._call(

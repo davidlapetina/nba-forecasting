@@ -104,6 +104,47 @@ player_game_stats = Table(
     UniqueConstraint("game_id", "player_id", name="uq_player_game_stats_game_player"),
 )
 
+play_by_play_events = Table(
+    "play_by_play_events",
+    metadata,
+    Column("id", BigInteger, primary_key=True, autoincrement=True),
+    Column("game_id", String, nullable=False),
+    Column("season", String, nullable=False),
+    Column("game_date", Date, nullable=False),
+    Column("action_number", Integer, nullable=False),
+    Column("action_id", BigInteger),
+    Column("period", Integer),
+    Column("clock", String),
+    Column("team_id", BigInteger),
+    Column("team_tricode", String),
+    Column("person_id", BigInteger),
+    Column("player_name", String),
+    Column("player_name_i", String),
+    Column("x_legacy", Float),
+    Column("y_legacy", Float),
+    Column("shot_distance", Float),
+    Column("shot_result", String),
+    Column("is_field_goal", Boolean),
+    Column("score_home", Integer),
+    Column("score_away", Integer),
+    Column("points_total", Integer),
+    Column("location", String),
+    Column("description", String),
+    Column("action_type", String),
+    Column("sub_type", String),
+    Column("video_available", Boolean),
+    Column("created_at", DateTime, server_default=func.now()),
+    UniqueConstraint("game_id", "action_number", name="uq_play_by_play_events_game_action"),
+)
+
+play_by_play_sync_state = Table(
+    "play_by_play_sync_state",
+    metadata,
+    Column("game_id", String, primary_key=True),
+    Column("fetched_at", DateTime, nullable=False, server_default=func.now()),
+    Column("event_count", Integer, nullable=False),
+)
+
 team_rosters = Table(
     "team_rosters",
     metadata,

@@ -10,7 +10,13 @@ from sklearn.calibration import calibration_curve
 from sklearn.metrics import RocCurveDisplay, roc_curve
 
 from nba_predictor.config import settings
-from nba_predictor.train.train_classifier import FEATURE_COLUMNS, evaluate_predictions, load_training_data, time_based_split
+from nba_predictor.train.train_classifier import (
+    FEATURE_COLUMNS,
+    elo_probabilities,
+    evaluate_predictions,
+    load_training_data,
+    time_based_split,
+)
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402
@@ -45,7 +51,12 @@ def save_evaluation_artifacts(
     fig.savefig(calibration_path)
     plt.close(fig)
 
-    frame = pd.DataFrame({"actual_home_win": y_true.astype(int), "home_win_probability": probabilities})
+    frame = pd.DataFrame(
+        {
+            "actual_home_win": y_true.astype(int).reset_index(drop=True),
+            "home_win_probability": probabilities.reset_index(drop=True),
+        }
+    )
     predictions_path = target_dir / "validation_predictions.csv"
     frame.to_csv(predictions_path, index=False)
 
@@ -66,13 +77,19 @@ def evaluate_saved_model() -> dict[str, float]:
     probabilities = model.predict_proba(valid_df[FEATURE_COLUMNS])[:, 1]
     y_true = valid_df["home_team_win"].astype(int)
     metrics = evaluate_predictions(y_true, probabilities)
+    elo_metrics = evaluate_predictions(y_true, elo_probabilities(valid_df))
     artifacts = save_evaluation_artifacts(y_true, pd.Series(probabilities))
     output_dir = settings.data_dir / "processed" / "evaluation"
     output_dir.mkdir(parents=True, exist_ok=True)
-    (output_dir / "latest_metrics.json").write_text(json.dumps(metrics, indent=2), encoding="utf-8")
+    (output_dir / "latest_metrics.json").write_text(
+        json.dumps({"classifier": metrics, "elo_baseline": elo_metrics}, indent=2),
+        encoding="utf-8",
+    )
     metadata["evaluation_artifacts"] = artifacts
+    metadata["metrics"] = metrics
+    metadata["elo_baseline_metrics"] = elo_metrics
     metadata_path.write_text(json.dumps(metadata, indent=2), encoding="utf-8")
-    print(json.dumps(metrics, indent=2))
+    print(json.dumps({"classifier": metrics, "elo_baseline": elo_metrics}, indent=2))
     return metrics
 
 

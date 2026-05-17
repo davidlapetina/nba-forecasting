@@ -16,4 +16,6 @@ def test_evaluation_artifacts_are_written(tmp_path: Path) -> None:
     assert Path(artifacts["roc_curve"]).exists()
     assert Path(artifacts["calibration_curve"]).exists()
     assert Path(artifacts["validation_predictions"]).exists()
-
+    frame = pd.read_csv(artifacts["validation_predictions"])
+    assert frame.shape == (4, 2)
+    assert not frame.isna().any().any()

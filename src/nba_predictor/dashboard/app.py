@@ -328,6 +328,91 @@ def _team_player_summary(team_id: int, season: str) -> pd.DataFrame:
     )
 
 
+def _player_directory(search: str | None = None) -> pd.DataFrame:
+    sql = """
+        select
+            p.player_id,
+            p.full_name,
+            count(s.*) as games,
+            max(s.game_date) as last_game_date
+        from players p
+        join player_game_stats s on s.player_id = p.player_id
+        where (:search is null or p.full_name ilike :search_pattern)
+        group by p.player_id, p.full_name
+        order by last_game_date desc, games desc, p.full_name
+        limit 200
+    """
+    params = {"search": search or None, "search_pattern": None if not search else f"%{search}%"}
+    return _read_frame(sql, params)
+
+
+def _metric_value(value: Any) -> str:
+    return "n/a" if pd.isna(value) else f"{float(value):.1f}"
+
+
+def _player_seasons(player_id: int) -> list[str]:
+    frame = _read_frame(
+        """
+        select distinct season
+        from player_game_stats
+        where player_id = :player_id
+        order by season desc
+        """,
+        {"player_id": player_id},
+    )
+    return frame["season"].tolist()
+
+
+def _player_season_summary(player_id: int, season: str) -> pd.DataFrame:
+    return _read_frame(
+        """
+        select
+            count(*) as games,
+            round(avg(minutes)::numeric, 1) as avg_minutes,
+            round(avg(points)::numeric, 1) as avg_points,
+            round(avg(rebounds)::numeric, 1) as avg_rebounds,
+            round(avg(assists)::numeric, 1) as avg_assists,
+            round(avg(plus_minus)::numeric, 1) as avg_plus_minus
+        from player_game_stats
+        where player_id = :player_id and season = :season
+        """,
+        {"player_id": player_id, "season": season},
+    )
+
+
+def _player_recent_games(player_id: int, season: str) -> pd.DataFrame:
+    return _read_frame(
+        """
+        select
+            game_date,
+            matchup,
+            case when won then 'W' else 'L' end as result,
+            minutes,
+            points,
+            rebounds,
+            assists,
+            plus_minus
+        from player_game_stats
+        where player_id = :player_id and season = :season
+        order by game_date desc, game_id desc
+        limit 15
+        """,
+        {"player_id": player_id, "season": season},
+    )
+
+
+def _player_scoring_series(player_id: int, season: str) -> pd.DataFrame:
+    return _read_frame(
+        """
+        select game_date, points, rebounds, assists
+        from player_game_stats
+        where player_id = :player_id and season = :season
+        order by game_date, game_id
+        """,
+        {"player_id": player_id, "season": season},
+    )
+
+
 def _team_player_crosscheck(team_id: int, season: str) -> pd.DataFrame:
     return _read_frame(
         """
@@ -411,6 +496,39 @@ def render_teams_tab() -> None:
                     st.rerun()
         return
     render_team_detail(selected_team, overview)
+
+
+def render_players_tab() -> None:
+    st.subheader("Players")
+    search = st.text_input("Search players", key="player_search")
+    directory = _player_directory(search.strip() or None)
+    if directory.empty:
+        st.info("No player game logs match the current filter.")
+        return
+    selected_name = st.selectbox("Player", directory["full_name"].tolist())
+    selected = directory.loc[directory["full_name"] == selected_name].iloc[0]
+    player_id = int(selected["player_id"])
+    seasons = _player_seasons(player_id)
+    if not seasons:
+        st.info("No player seasons available.")
+        return
+    season = st.selectbox("Season", seasons, key=f"player_season_detail_{player_id}")
+    summary = _player_season_summary(player_id, season).iloc[0]
+    st.markdown(f"#### {selected_name}")
+    cols = st.columns(6)
+    cols[0].metric("Games", int(summary["games"]))
+    cols[1].metric("Minutes", _metric_value(summary["avg_minutes"]))
+    cols[2].metric("Points", _metric_value(summary["avg_points"]))
+    cols[3].metric("Rebounds", _metric_value(summary["avg_rebounds"]))
+    cols[4].metric("Assists", _metric_value(summary["avg_assists"]))
+    cols[5].metric("Plus/minus", _metric_value(summary["avg_plus_minus"]))
+    series_col, games_col = st.columns([1.2, 1])
+    with series_col:
+        st.markdown("#### Game Trend")
+        st.line_chart(_player_scoring_series(player_id, season), x="game_date", y=["points", "rebounds", "assists"], height=280)
+    with games_col:
+        st.markdown("#### Recent Games")
+        st.dataframe(_player_recent_games(player_id, season), use_container_width=True, hide_index=True)
 
 
 def render_team_detail(team_code: str, overview: pd.DataFrame | None = None) -> None:
@@ -532,11 +650,13 @@ def render_matchup_tab() -> None:
         st.error(str(exc))
         return
     winner = home if result["predicted_winner_team_id"] == team_id_for_abbreviation(home) else away
-    metrics = st.columns(4)
-    metrics[0].metric("Home win", f"{result['home_win_probability']:.1%}")
-    metrics[1].metric("Away win", f"{result['away_win_probability']:.1%}")
-    metrics[2].metric("Winner", winner)
-    metrics[3].metric(
+    elo_winner = home if result["elo_predicted_winner_team_id"] == team_id_for_abbreviation(home) else away
+    metrics = st.columns(5)
+    metrics[0].metric("Classifier home", f"{result['home_win_probability']:.1%}")
+    metrics[1].metric("Classifier winner", winner)
+    metrics[2].metric("ELO home", f"{result['elo_home_win_probability']:.1%}")
+    metrics[3].metric("ELO winner", elo_winner)
+    metrics[4].metric(
         "Projected score",
         f"{result['forecasted_home_points']:.1f} - {result['forecasted_away_points']:.1f}",
     )
@@ -548,11 +668,22 @@ def render_model_tab() -> None:
     if metadata is None:
         st.info("Model metadata is not available yet.")
         return
-    metrics = metadata.get("metrics", {})
-    cols = st.columns(4)
-    for column, key in zip(cols, ["accuracy", "roc_auc", "log_loss", "brier_score"], strict=True):
-        value = metrics.get(key)
-        column.metric(key.replace("_", " ").title(), "n/a" if value is None else f"{float(value):.3f}")
+    classifier_metrics = metadata.get("metrics", {})
+    elo_metrics = metadata.get("elo_baseline_metrics", {})
+    comparison_rows = []
+    for label, metrics in [("Classifier", classifier_metrics), ("ELO baseline", elo_metrics)]:
+        if metrics:
+            comparison_rows.append(
+                {
+                    "Signal": label,
+                    "Accuracy": metrics.get("accuracy"),
+                    "ROC AUC": metrics.get("roc_auc"),
+                    "Log loss": metrics.get("log_loss"),
+                    "Brier score": metrics.get("brier_score"),
+                }
+            )
+    if comparison_rows:
+        st.dataframe(pd.DataFrame(comparison_rows), use_container_width=True, hide_index=True)
     st.caption(
         f"{metadata.get('model_name', 'unknown')} {metadata.get('model_version', '')} trained {metadata.get('trained_at', '')}"
     )
@@ -707,11 +838,13 @@ def main() -> None:
     st.markdown('<h1 class="dashboard-title">NBA Predictor</h1>', unsafe_allow_html=True)
     st.markdown('<p class="dashboard-subtitle">Team form, matchup predictions, and local analytics.</p>', unsafe_allow_html=True)
     render_overview()
-    teams_tab, matchup_tab, chat_tab, operations_tab, model_tab = st.tabs(
-        ["Teams", "Matchup", "Ask Data", "Operations", "Model"]
+    teams_tab, players_tab, matchup_tab, chat_tab, operations_tab, model_tab = st.tabs(
+        ["Teams", "Players", "Matchup", "Ask Data", "Operations", "Model"]
     )
     with teams_tab:
         render_teams_tab()
+    with players_tab:
+        render_players_tab()
     with matchup_tab:
         render_matchup_tab()
     with chat_tab:

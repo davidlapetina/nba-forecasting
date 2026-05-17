@@ -16,6 +16,7 @@ from nba_predictor.forecast.forecast_team_metrics import forecast_team_metrics
 from nba_predictor.ingest.ingest_box_scores import ingest_box_scores
 from nba_predictor.ingest.ingest_games import ingest_games
 from nba_predictor.ingest.ingest_players import ingest_players
+from nba_predictor.ingest.ingest_play_by_play import ingest_play_by_play
 from nba_predictor.ingest.ingest_rosters import ingest_rosters
 from nba_predictor.ingest.ingest_schedule import ingest_schedule
 from nba_predictor.ingest.ingest_team_logs import ingest_team_logs
@@ -83,6 +84,7 @@ def run_data_refresh(seasons: list[str], predict_date: date, job_name: str = "da
                 "team_logs": ingest_team_logs(season),
                 "box_scores": ingest_box_scores(season),
                 "player_logs": ingest_players(season),
+                "play_by_play_events": ingest_play_by_play(season),
             },
         )
         _sum_counts(counts, ingest_rosters(season))

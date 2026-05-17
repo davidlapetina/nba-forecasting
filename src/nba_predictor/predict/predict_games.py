@@ -20,6 +20,7 @@ from nba_predictor.db import (
     teams,
     upsert_rows,
 )
+from nba_predictor.features.elo import expected_home_win_probability
 from nba_predictor.train.train_classifier import FEATURE_COLUMNS
 
 
@@ -140,10 +141,16 @@ def predict_matchup(home_team_id: int, away_team_id: int, game_date: date) -> di
     model, metadata = load_model_bundle()
     feature_row = build_matchup_feature_row(engine, home_team_id, away_team_id, game_date)
     probability = normalize_probability(model.predict_proba(pd.DataFrame([feature_row])[FEATURE_COLUMNS])[:, 1][0])
+    elo_probability = normalize_probability(
+        expected_home_win_probability(feature_row["home_elo"], feature_row["away_elo"])
+    )
     return {
         "home_win_probability": probability,
         "away_win_probability": 1.0 - probability,
         "predicted_winner_team_id": home_team_id if probability >= 0.5 else away_team_id,
+        "elo_home_win_probability": elo_probability,
+        "elo_away_win_probability": 1.0 - elo_probability,
+        "elo_predicted_winner_team_id": home_team_id if elo_probability >= 0.5 else away_team_id,
         "forecasted_home_points": feature_row["forecasted_home_points"],
         "forecasted_away_points": feature_row["forecasted_away_points"],
         "model_name": metadata["model_name"],

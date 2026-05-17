@@ -65,6 +65,43 @@ CREATE TABLE IF NOT EXISTS player_game_stats (
     UNIQUE(game_id, player_id)
 );
 
+CREATE TABLE IF NOT EXISTS play_by_play_events (
+    id BIGSERIAL PRIMARY KEY,
+    game_id TEXT NOT NULL,
+    season TEXT NOT NULL,
+    game_date DATE NOT NULL,
+    action_number INTEGER NOT NULL,
+    action_id BIGINT,
+    period INTEGER,
+    clock TEXT,
+    team_id BIGINT,
+    team_tricode TEXT,
+    person_id BIGINT,
+    player_name TEXT,
+    player_name_i TEXT,
+    x_legacy DOUBLE PRECISION,
+    y_legacy DOUBLE PRECISION,
+    shot_distance DOUBLE PRECISION,
+    shot_result TEXT,
+    is_field_goal BOOLEAN,
+    score_home INTEGER,
+    score_away INTEGER,
+    points_total INTEGER,
+    location TEXT,
+    description TEXT,
+    action_type TEXT,
+    sub_type TEXT,
+    video_available BOOLEAN,
+    created_at TIMESTAMP DEFAULT NOW(),
+    UNIQUE(game_id, action_number)
+);
+
+CREATE TABLE IF NOT EXISTS play_by_play_sync_state (
+    game_id TEXT PRIMARY KEY,
+    fetched_at TIMESTAMP NOT NULL DEFAULT NOW(),
+    event_count INTEGER NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS team_rosters (
     id BIGSERIAL PRIMARY KEY,
     team_id BIGINT NOT NULL,

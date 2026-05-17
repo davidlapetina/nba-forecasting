@@ -52,3 +52,29 @@ def test_model_info(monkeypatch) -> None:
     assert response.status_code == 200
     assert response.json()["model_name"] == "lightgbm"
 
+
+def test_predict_matchup_includes_elo_baseline(monkeypatch) -> None:
+    monkeypatch.setattr(main, "team_id_for_abbreviation", lambda abbreviation: {"BOS": 1, "NYK": 2}[abbreviation])
+    monkeypatch.setattr(
+        main,
+        "predict_matchup_by_id",
+        lambda home_team_id, away_team_id, game_date: {
+            "home_win_probability": 0.64,
+            "away_win_probability": 0.36,
+            "predicted_winner_team_id": 1,
+            "elo_home_win_probability": 0.58,
+            "elo_away_win_probability": 0.42,
+            "elo_predicted_winner_team_id": 1,
+            "forecasted_home_points": 116.2,
+            "forecasted_away_points": 110.8,
+        },
+    )
+
+    response = client.post(
+        "/predict/matchup",
+        json={"home_team": "BOS", "away_team": "NYK", "game_date": "2026-05-17"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["elo_home_win_probability"] == 0.58
+    assert response.json()["elo_predicted_winner"] == "BOS"

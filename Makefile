@@ -1,4 +1,4 @@
-.PHONY: install db-up api dashboard ingest ingest-officials ingest-players ingest-rosters backfill backfill-players backfill-officials features forecast train evaluate predict refresh refresh-full test full-pipeline
+.PHONY: install db-up api dashboard ingest ingest-officials ingest-players ingest-play-by-play ingest-rosters backfill backfill-players backfill-play-by-play backfill-officials features forecast train evaluate predict refresh refresh-full test full-pipeline
 
 SEASON ?= 2025-26
 START_SEASON ?= 1946-47
@@ -31,6 +31,9 @@ ingest-officials:
 ingest-players:
 	$(PYTHON) -m nba_predictor.ingest.ingest_players --season $(SEASON)
 
+ingest-play-by-play:
+	$(PYTHON) -m nba_predictor.ingest.ingest_play_by_play --season $(SEASON)
+
 ingest-rosters:
 	$(PYTHON) -m nba_predictor.ingest.ingest_rosters --season $(SEASON)
 
@@ -39,6 +42,9 @@ backfill:
 
 backfill-players:
 	$(PYTHON) -m nba_predictor.ingest.ingest_player_history --start-season $(START_SEASON) --end-season $(END_SEASON)
+
+backfill-play-by-play:
+	$(PYTHON) -m nba_predictor.ingest.ingest_play_by_play --start-season $(START_SEASON) --end-season $(END_SEASON)
 
 backfill-officials:
 	$(PYTHON) -m nba_predictor.ingest.ingest_history --start-season $(START_SEASON) --end-season $(END_SEASON) --skip-box-scores --include-officials

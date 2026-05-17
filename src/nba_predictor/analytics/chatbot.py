@@ -26,6 +26,7 @@ ALLOWED_TABLES = {
     "players",
     "games",
     "player_game_stats",
+    "play_by_play_events",
     "team_rosters",
     "coaches",
     "team_coaches",
@@ -48,6 +49,7 @@ team_season_identities(team_id, season, abbreviation, full_name)
 players(player_id, full_name, first_name, last_name, is_active)
 games(game_id, season, game_date, home_team_id, away_team_id, home_score, away_score, home_team_win, season_type)
 player_game_stats(game_id, player_id, team_id, game_date, season, season_type, matchup, is_home, won, minutes, points, rebounds, assists, steals, blocks, turnovers, field_goal_pct, three_point_pct, free_throw_pct, plus_minus)
+play_by_play_events(game_id, season, game_date, action_number, action_id, period, clock, team_id, team_tricode, person_id, player_name, score_home, score_away, description, action_type, sub_type)
 team_rosters(team_id, season, player_id, jersey_number, position, height, weight, birth_date, age, experience, school)
 coaches(coach_id, first_name, last_name, coach_name)
 team_coaches(team_id, season, coach_id, is_assistant, coach_type, sort_sequence)
@@ -313,6 +315,11 @@ def _prediction_rows(plan: QueryPlan) -> list[dict[str, Any]]:
             "home_win_probability": result["home_win_probability"],
             "away_win_probability": result["away_win_probability"],
             "predicted_winner": winner,
+            "elo_home_win_probability": result["elo_home_win_probability"],
+            "elo_away_win_probability": result["elo_away_win_probability"],
+            "elo_predicted_winner": plan.home_team.upper()
+            if result["elo_predicted_winner_team_id"] == team_id_for_abbreviation(plan.home_team)
+            else plan.away_team.upper(),
             "forecasted_home_points": result["forecasted_home_points"],
             "forecasted_away_points": result["forecasted_away_points"],
         }

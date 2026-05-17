@@ -34,3 +34,19 @@ SELECT DISTINCT ON (player_id)
     season
 FROM player_game_stats
 ORDER BY player_id, game_date DESC, game_id DESC;
+
+CREATE OR REPLACE VIEW player_season_summary AS
+SELECT
+    s.player_id,
+    p.full_name,
+    s.team_id,
+    s.season,
+    count(*) AS games,
+    round(avg(s.minutes)::numeric, 1) AS avg_minutes,
+    round(avg(s.points)::numeric, 1) AS avg_points,
+    round(avg(s.rebounds)::numeric, 1) AS avg_rebounds,
+    round(avg(s.assists)::numeric, 1) AS avg_assists,
+    round(avg(s.plus_minus)::numeric, 1) AS avg_plus_minus
+FROM player_game_stats s
+JOIN players p ON p.player_id = s.player_id
+GROUP BY s.player_id, p.full_name, s.team_id, s.season;

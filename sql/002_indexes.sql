@@ -4,6 +4,8 @@ CREATE INDEX IF NOT EXISTS idx_games_away_team_id ON games(away_team_id);
 CREATE INDEX IF NOT EXISTS idx_team_season_identities_season_team ON team_season_identities(season, team_id);
 CREATE INDEX IF NOT EXISTS idx_player_game_stats_player_date ON player_game_stats(player_id, game_date);
 CREATE INDEX IF NOT EXISTS idx_player_game_stats_team_date ON player_game_stats(team_id, game_date);
+CREATE INDEX IF NOT EXISTS idx_play_by_play_events_game_action ON play_by_play_events(game_id, action_number);
+CREATE INDEX IF NOT EXISTS idx_play_by_play_events_team_date ON play_by_play_events(team_id, game_date);
 CREATE INDEX IF NOT EXISTS idx_team_rosters_team_season ON team_rosters(team_id, season);
 CREATE INDEX IF NOT EXISTS idx_team_coaches_team_season ON team_coaches(team_id, season);
 CREATE INDEX IF NOT EXISTS idx_team_game_stats_team_date ON team_game_stats(team_id, game_date);

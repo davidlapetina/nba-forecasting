@@ -84,5 +84,43 @@ services:
       - ./data:/app/data
     command: ["python", "-m", "nba_predictor.jobs.refresh_pipeline", "--interval-hours", "168", "--retrain"]
 
+  superset-db:
+    image: postgres:16
+    container_name: nba_predictor_superset_db
+    environment:
+      POSTGRES_DB: superset
+      POSTGRES_USER: superset
+      POSTGRES_PASSWORD: superset
+    profiles:
+      - analytics
+    volumes:
+      - superset_db_data:/var/lib/postgresql/data
+
+  superset:
+    image: apache/superset:latest-dev
+    container_name: nba_predictor_superset
+    environment:
+      SUPERSET_SECRET_KEY: nba-forecasting-local-dev-secret
+      SUPERSET_CONFIG_PATH: /app/pythonpath/superset_config.py
+      DATABASE_URL: postgresql+psycopg2://superset:superset@superset-db:5432/superset
+    depends_on:
+      - postgres
+      - superset-db
+    profiles:
+      - analytics
+    ports:
+      - "8088:8088"
+    volumes:
+      - ./superset:/app/pythonpath
+    command:
+      - /bin/sh
+      - -c
+      - >
+        superset db upgrade &&
+        superset fab create-admin --username admin --firstname NBA --lastname Admin --email admin@example.com --password admin || true &&
+        superset init &&
+        /usr/bin/run-server.sh
+
 volumes:
   postgres_data:
+  superset_db_data:

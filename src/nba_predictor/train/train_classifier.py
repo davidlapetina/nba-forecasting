@@ -13,6 +13,7 @@ from sqlalchemy import select
 
 from nba_predictor.config import settings
 from nba_predictor.db import game_features, get_engine, team_metric_forecasts
+from nba_predictor.features.elo import expected_home_win_probability
 
 BASE_FEATURES = [
     "home_win_pct",
@@ -187,6 +188,13 @@ def evaluate_predictions(y_true: pd.Series, probabilities: pd.Series) -> dict[st
     }
 
 
+def elo_probabilities(frame: pd.DataFrame) -> pd.Series:
+    return frame.apply(
+        lambda row: expected_home_win_probability(row["home_elo"], row["away_elo"]),
+        axis=1,
+    ).astype(float)
+
+
 def calibration_curve_data(y_true: pd.Series, probabilities: pd.Series) -> dict[str, list[float]]:
     prob_true, prob_pred = calibration_curve(y_true, probabilities, n_bins=10, strategy="uniform")
     return {
@@ -214,7 +222,9 @@ def train_classifier(model_name: str | None = None) -> dict[str, Any]:
     model, selected_model = _build_model(requested_model)
     model.fit(train_df[FEATURE_COLUMNS], train_df["home_team_win"].astype(int))
     probabilities = model.predict_proba(valid_df[FEATURE_COLUMNS])[:, 1]
-    metrics = evaluate_predictions(valid_df["home_team_win"].astype(int), pd.Series(probabilities))
+    y_valid = valid_df["home_team_win"].astype(int)
+    metrics = evaluate_predictions(y_valid, pd.Series(probabilities))
+    elo_metrics = evaluate_predictions(y_valid, elo_probabilities(valid_df))
     classifier_dir = settings.model_dir / "classifier"
     classifier_dir.mkdir(parents=True, exist_ok=True)
     artifact_path = classifier_dir / f"game_winner_{selected_model}.joblib"
@@ -226,7 +236,8 @@ def train_classifier(model_name: str | None = None) -> dict[str, Any]:
         "trained_at": datetime.now(timezone.utc).isoformat(),
         "features": FEATURE_COLUMNS,
         "metrics": metrics,
-        "calibration_curve": calibration_curve_data(valid_df["home_team_win"].astype(int), pd.Series(probabilities)),
+        "elo_baseline_metrics": elo_metrics,
+        "calibration_curve": calibration_curve_data(y_valid, pd.Series(probabilities)),
     }
     (classifier_dir / "model_metadata.json").write_text(json.dumps(metadata, indent=2), encoding="utf-8")
     print(json.dumps(metrics, indent=2))
