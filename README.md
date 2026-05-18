@@ -63,7 +63,7 @@ TimesFM forecasts numeric univariate team signals such as:
 - field-goal percentage
 - three-point percentage
 
-The classifier then combines forecasts with leakage-safe rolling historical features and predicts the probability that the home team wins. Direct matchup predictions also expose the independent ELO baseline probability so the learned model can be compared against a simpler rating signal instead of hiding ELO only inside the feature set.
+The classifier then combines forecasts with leakage-safe rolling historical features, all-time head-to-head context, current-season matchup history, and playoff-series state before predicting the probability that the home team wins. Direct matchup predictions also expose the independent ELO and head-to-head baseline probabilities so the learned model can be compared against simpler signals instead of hiding them inside the feature set.
 
 The system now stores richer player availability data:
 
@@ -467,6 +467,7 @@ Main views:
 - `Upcoming`: future games plus saved team injury/news context summaries
 - team detail: all-time ELO, season ELO, recent games, saved predictions, player/team reconciliation, coach assignments, team-scoped chat
 - `Matchup`: direct matchup prediction form
+  - shows the model pick alongside ELO, head-to-head, same-season meetings, and active playoff-series score when applicable
 - `Ask Data`: general natural-language analytics with a visible question input, quick prompts, result tables, and generated SQL inspection
 - `Operations`: buttons for routine ingest, feature, forecast, train, evaluate, predict, refresh, refresh-and-retrain, and full-pipeline jobs
 - `Model`: latest saved evaluation metrics and plots

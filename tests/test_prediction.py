@@ -27,6 +27,11 @@ def test_matchup_prediction_includes_blend_and_component_signals(monkeypatch) ->
             "h2h_games": 12,
             "h2h_recent_games": 10,
             "h2h_playoff_games": 4,
+            "same_season_h2h_games": 5,
+            "same_season_playoff_games": 2,
+            "playoff_series_game_number": 3,
+            "playoff_series_home_wins": 2,
+            "playoff_series_away_wins": 0,
             "forecasted_home_points": 112.0,
             "forecasted_away_points": 108.0,
         }
@@ -54,6 +59,8 @@ def test_matchup_prediction_includes_blend_and_component_signals(monkeypatch) ->
     assert result["elo_home_win_probability"] > 0.5
     assert result["elo_predicted_winner_team_id"] == 1
     assert result["h2h_playoff_games"] == 4
+    assert result["same_season_h2h_games"] == 5
+    assert result["playoff_series_home_wins"] == 2
 
 
 def test_batch_matchup_prediction_reuses_loaded_bundle(monkeypatch) -> None:
@@ -70,6 +77,11 @@ def test_batch_matchup_prediction_reuses_loaded_bundle(monkeypatch) -> None:
             "h2h_games": 0,
             "h2h_recent_games": 0,
             "h2h_playoff_games": 0,
+            "same_season_h2h_games": 0,
+            "same_season_playoff_games": 0,
+            "playoff_series_game_number": 1,
+            "playoff_series_home_wins": 0,
+            "playoff_series_away_wins": 0,
             "forecasted_home_points": 110.0,
             "forecasted_away_points": 108.0,
         }

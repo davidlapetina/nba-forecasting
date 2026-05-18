@@ -40,6 +40,11 @@ class PredictionResponse(BaseModel):
     h2h_games: int | None = None
     h2h_recent_games: int | None = None
     h2h_playoff_games: int | None = None
+    same_season_h2h_games: int | None = None
+    same_season_playoff_games: int | None = None
+    playoff_series_game_number: int | None = None
+    playoff_series_home_wins: int | None = None
+    playoff_series_away_wins: int | None = None
     forecasted_home_points: float | None = None
     forecasted_away_points: float | None = None
 
@@ -162,6 +167,11 @@ def predict_matchup(request: MatchupRequest) -> PredictionResponse:
         h2h_games=result["h2h_games"],
         h2h_recent_games=result["h2h_recent_games"],
         h2h_playoff_games=result["h2h_playoff_games"],
+        same_season_h2h_games=result["same_season_h2h_games"],
+        same_season_playoff_games=result["same_season_playoff_games"],
+        playoff_series_game_number=result["playoff_series_game_number"],
+        playoff_series_home_wins=result["playoff_series_home_wins"],
+        playoff_series_away_wins=result["playoff_series_away_wins"],
         forecasted_home_points=result["forecasted_home_points"],
         forecasted_away_points=result["forecasted_away_points"],
     )

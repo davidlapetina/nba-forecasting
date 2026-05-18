@@ -183,6 +183,8 @@ def _upcoming_games_with_predictions(upcoming: pd.DataFrame) -> pd.DataFrame:
         rows["elo_winner"] = "Unavailable"
         rows["history_home"] = None
         rows["h2h_games"] = None
+        rows["same_season_h2h_games"] = None
+        rows["series_score"] = "Unavailable"
         rows["projected_score"] = "Unavailable"
         return rows
     rows["blend_home"] = [result["home_win_probability"] for result in predictions]
@@ -202,6 +204,13 @@ def _upcoming_games_with_predictions(upcoming: pd.DataFrame) -> pd.DataFrame:
     ]
     rows["history_home"] = [result["history_home_win_probability"] for result in predictions]
     rows["h2h_games"] = [result["h2h_games"] for result in predictions]
+    rows["same_season_h2h_games"] = [result["same_season_h2h_games"] for result in predictions]
+    rows["series_score"] = [
+        f"{result['playoff_series_home_wins']}-{result['playoff_series_away_wins']}"
+        if result["same_season_playoff_games"]
+        else "-"
+        for result in predictions
+    ]
     rows["projected_score"] = [
         f"{result['forecasted_home_points']:.1f} - {result['forecasted_away_points']:.1f}"
         for result in predictions
@@ -681,6 +690,8 @@ def render_upcoming_tab() -> None:
             "elo_winner",
             "history_home",
             "h2h_games",
+            "same_season_h2h_games",
+            "series_score",
             "projected_score",
         ]
     ].copy()
@@ -709,6 +720,8 @@ def render_upcoming_tab() -> None:
             "elo_winner": "ELO Pick",
             "history_home": "H2H Home",
             "h2h_games": "H2H Games",
+            "same_season_h2h_games": "Season H2H",
+            "series_score": "Series",
             "projected_score": "Projected Score",
         }
     )
@@ -872,11 +885,23 @@ def render_matchup_tab() -> None:
     metrics[5].metric("H2H home", f"{result['history_home_win_probability']:.1%}")
     detail_metrics = st.columns(4)
     detail_metrics[0].metric("ELO winner", elo_winner)
-    detail_metrics[1].metric("Prior meetings", int(result["h2h_games"]))
-    detail_metrics[2].metric("Prior playoff meetings", int(result["h2h_playoff_games"]))
+    detail_metrics[1].metric("Season meetings", int(result["same_season_h2h_games"]))
+    detail_metrics[2].metric(
+        "Series score",
+        f"{int(result['playoff_series_home_wins'])}-{int(result['playoff_series_away_wins'])}"
+        if result["same_season_playoff_games"]
+        else "-",
+    )
     detail_metrics[3].metric(
         "Projected score",
         f"{result['forecasted_home_points']:.1f} - {result['forecasted_away_points']:.1f}",
+    )
+    secondary_metrics = st.columns(3)
+    secondary_metrics[0].metric("Prior meetings", int(result["h2h_games"]))
+    secondary_metrics[1].metric("Prior playoff meetings", int(result["h2h_playoff_games"]))
+    secondary_metrics[2].metric(
+        "Next series game",
+        int(result["playoff_series_game_number"]) if result["same_season_playoff_games"] else "-",
     )
 
 

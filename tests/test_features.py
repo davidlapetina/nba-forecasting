@@ -180,6 +180,7 @@ def test_matchup_context_uses_prior_regular_and_playoff_games() -> None:
         [
             {
                 "game_id": "regular_1",
+                "season": "2025-26",
                 "game_date": "2026-01-01",
                 "home_team_id": 1,
                 "away_team_id": 2,
@@ -188,6 +189,7 @@ def test_matchup_context_uses_prior_regular_and_playoff_games() -> None:
             },
             {
                 "game_id": "playoff_1",
+                "season": "2025-26",
                 "game_date": "2026-04-20",
                 "home_team_id": 2,
                 "away_team_id": 1,
@@ -196,6 +198,7 @@ def test_matchup_context_uses_prior_regular_and_playoff_games() -> None:
             },
             {
                 "game_id": "future",
+                "season": "2025-26",
                 "game_date": "2026-05-01",
                 "home_team_id": 1,
                 "away_team_id": 2,
@@ -212,4 +215,42 @@ def test_matchup_context_uses_prior_regular_and_playoff_games() -> None:
     assert future["h2h_recent_games"] == 2
     assert future["h2h_regular_games"] == 1
     assert future["h2h_playoff_games"] == 1
+    assert future["same_season_h2h_games"] == 2
+    assert future["same_season_regular_games"] == 1
+    assert future["same_season_playoff_games"] == 1
+    assert future["playoff_series_game_number"] == 2
+    assert future["playoff_series_home_wins"] == 1
+    assert future["playoff_series_away_wins"] == 0
     assert future["h2h_history_home_win_probability"] > 0.5
+
+
+def test_matchup_context_resets_same_season_history_between_seasons() -> None:
+    games = pd.DataFrame(
+        [
+            {
+                "game_id": "old_regular",
+                "season": "2024-25",
+                "game_date": "2025-01-01",
+                "home_team_id": 1,
+                "away_team_id": 2,
+                "home_team_win": True,
+                "season_type": "Regular Season",
+            },
+            {
+                "game_id": "new_regular",
+                "season": "2025-26",
+                "game_date": "2026-01-01",
+                "home_team_id": 1,
+                "away_team_id": 2,
+                "home_team_win": None,
+                "season_type": "Regular Season",
+            },
+        ]
+    )
+
+    rows = compute_matchup_context_rows(games)
+    current = next(row for row in rows if row["game_id"] == "new_regular")
+
+    assert current["h2h_games"] == 1
+    assert current["same_season_h2h_games"] == 0
+    assert current["playoff_series_games"] == 0
