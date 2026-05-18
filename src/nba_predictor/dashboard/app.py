@@ -175,15 +175,24 @@ def _upcoming_games_with_predictions(upcoming: pd.DataFrame) -> pd.DataFrame:
             ]
         )
     except Exception:
+        rows["blend_home"] = None
+        rows["blend_winner"] = "Unavailable"
         rows["classifier_home"] = None
         rows["classifier_winner"] = "Unavailable"
         rows["elo_home"] = None
         rows["elo_winner"] = "Unavailable"
+        rows["history_home"] = None
+        rows["h2h_games"] = None
         rows["projected_score"] = "Unavailable"
         return rows
-    rows["classifier_home"] = [result["home_win_probability"] for result in predictions]
-    rows["classifier_winner"] = [
+    rows["blend_home"] = [result["home_win_probability"] for result in predictions]
+    rows["blend_winner"] = [
         row.home_team if result["predicted_winner_team_id"] == row.home_team_id else row.away_team
+        for row, result in zip(rows.itertuples(index=False), predictions, strict=True)
+    ]
+    rows["classifier_home"] = [result["classifier_home_win_probability"] for result in predictions]
+    rows["classifier_winner"] = [
+        row.home_team if result["classifier_predicted_winner_team_id"] == row.home_team_id else row.away_team
         for row, result in zip(rows.itertuples(index=False), predictions, strict=True)
     ]
     rows["elo_home"] = [result["elo_home_win_probability"] for result in predictions]
@@ -191,6 +200,8 @@ def _upcoming_games_with_predictions(upcoming: pd.DataFrame) -> pd.DataFrame:
         row.home_team if result["elo_predicted_winner_team_id"] == row.home_team_id else row.away_team
         for row, result in zip(rows.itertuples(index=False), predictions, strict=True)
     ]
+    rows["history_home"] = [result["history_home_win_probability"] for result in predictions]
+    rows["h2h_games"] = [result["h2h_games"] for result in predictions]
     rows["projected_score"] = [
         f"{result['forecasted_home_points']:.1f} - {result['forecasted_away_points']:.1f}"
         for result in predictions
@@ -662,17 +673,27 @@ def render_upcoming_tab() -> None:
             "game_date",
             "away_team",
             "home_team",
+            "blend_home",
+            "blend_winner",
             "classifier_home",
             "classifier_winner",
             "elo_home",
             "elo_winner",
+            "history_home",
+            "h2h_games",
             "projected_score",
         ]
     ].copy()
+    display_upcoming["blend_home"] = display_upcoming["blend_home"].map(
+        lambda value: None if pd.isna(value) else f"{value:.1%}"
+    )
     display_upcoming["classifier_home"] = display_upcoming["classifier_home"].map(
         lambda value: None if pd.isna(value) else f"{value:.1%}"
     )
     display_upcoming["elo_home"] = display_upcoming["elo_home"].map(
+        lambda value: None if pd.isna(value) else f"{value:.1%}"
+    )
+    display_upcoming["history_home"] = display_upcoming["history_home"].map(
         lambda value: None if pd.isna(value) else f"{value:.1%}"
     )
     display_upcoming = display_upcoming.rename(
@@ -680,10 +701,14 @@ def render_upcoming_tab() -> None:
             "game_date": "Date",
             "away_team": "Away",
             "home_team": "Home",
+            "blend_home": "Blend Home",
+            "blend_winner": "Blend Pick",
             "classifier_home": "Classifier Home",
             "classifier_winner": "Classifier Pick",
             "elo_home": "ELO Home",
             "elo_winner": "ELO Pick",
+            "history_home": "H2H Home",
+            "h2h_games": "H2H Games",
             "projected_score": "Projected Score",
         }
     )
@@ -834,14 +859,22 @@ def render_matchup_tab() -> None:
     except Exception as exc:
         st.error(str(exc))
         return
-    winner = home if result["predicted_winner_team_id"] == team_id_for_abbreviation(home) else away
+    home_team_id = team_id_for_abbreviation(home)
+    winner = home if result["predicted_winner_team_id"] == home_team_id else away
+    classifier_winner = home if result["classifier_predicted_winner_team_id"] == home_team_id else away
     elo_winner = home if result["elo_predicted_winner_team_id"] == team_id_for_abbreviation(home) else away
-    metrics = st.columns(5)
-    metrics[0].metric("Classifier home", f"{result['home_win_probability']:.1%}")
-    metrics[1].metric("Classifier winner", winner)
-    metrics[2].metric("ELO home", f"{result['elo_home_win_probability']:.1%}")
-    metrics[3].metric("ELO winner", elo_winner)
-    metrics[4].metric(
+    metrics = st.columns(6)
+    metrics[0].metric("Blend home", f"{result['home_win_probability']:.1%}")
+    metrics[1].metric("Blend winner", winner)
+    metrics[2].metric("Classifier home", f"{result['classifier_home_win_probability']:.1%}")
+    metrics[3].metric("Classifier winner", classifier_winner)
+    metrics[4].metric("ELO home", f"{result['elo_home_win_probability']:.1%}")
+    metrics[5].metric("H2H home", f"{result['history_home_win_probability']:.1%}")
+    detail_metrics = st.columns(4)
+    detail_metrics[0].metric("ELO winner", elo_winner)
+    detail_metrics[1].metric("Prior meetings", int(result["h2h_games"]))
+    detail_metrics[2].metric("Prior playoff meetings", int(result["h2h_playoff_games"]))
+    detail_metrics[3].metric(
         "Projected score",
         f"{result['forecasted_home_points']:.1f} - {result['forecasted_away_points']:.1f}",
     )
@@ -853,10 +886,17 @@ def render_model_tab() -> None:
     if metadata is None:
         st.info("Model metadata is not available yet.")
         return
+    blend_metrics = metadata.get("blend_metrics", {})
     classifier_metrics = metadata.get("metrics", {})
     elo_metrics = metadata.get("elo_baseline_metrics", {})
+    history_metrics = metadata.get("history_baseline_metrics", {})
     comparison_rows = []
-    for label, metrics in [("Classifier", classifier_metrics), ("ELO baseline", elo_metrics)]:
+    for label, metrics in [
+        ("Blend", blend_metrics),
+        ("Classifier", classifier_metrics),
+        ("ELO baseline", elo_metrics),
+        ("H2H baseline", history_metrics),
+    ]:
         if metrics:
             comparison_rows.append(
                 {
@@ -869,6 +909,14 @@ def render_model_tab() -> None:
             )
     if comparison_rows:
         st.dataframe(pd.DataFrame(comparison_rows), use_container_width=True, hide_index=True)
+    blend_weights = metadata.get("blend_weights")
+    if blend_weights:
+        st.caption(
+            "Blend weights: "
+            f"classifier {blend_weights.get('classifier', 0):.0%}, "
+            f"ELO {blend_weights.get('elo', 0):.0%}, "
+            f"H2H {blend_weights.get('history', 0):.0%}"
+        )
     st.caption(
         f"{metadata.get('model_name', 'unknown')} {metadata.get('model_version', '')} trained {metadata.get('trained_at', '')}"
     )

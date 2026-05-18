@@ -4,6 +4,7 @@ import pandas as pd
 
 from nba_predictor.features.build_game_features import compute_game_feature_rows
 from nba_predictor.features.build_team_daily_features import compute_team_daily_feature_rows
+from nba_predictor.features.matchup_context import compute_matchup_context_rows
 
 
 def _frames() -> tuple[pd.DataFrame, pd.DataFrame]:
@@ -172,3 +173,43 @@ def test_game_features_include_prior_zero_minute_rate() -> None:
     assert second_game["home_recent_zero_minute_rate"] == 0.5
     assert second_game["away_recent_zero_minute_rate"] == 0.0
     assert second_game["recent_zero_minute_rate_diff"] == 0.5
+
+
+def test_matchup_context_uses_prior_regular_and_playoff_games() -> None:
+    games = pd.DataFrame(
+        [
+            {
+                "game_id": "regular_1",
+                "game_date": "2026-01-01",
+                "home_team_id": 1,
+                "away_team_id": 2,
+                "home_team_win": True,
+                "season_type": "Regular Season",
+            },
+            {
+                "game_id": "playoff_1",
+                "game_date": "2026-04-20",
+                "home_team_id": 2,
+                "away_team_id": 1,
+                "home_team_win": False,
+                "season_type": "Playoffs",
+            },
+            {
+                "game_id": "future",
+                "game_date": "2026-05-01",
+                "home_team_id": 1,
+                "away_team_id": 2,
+                "home_team_win": None,
+                "season_type": "Playoffs",
+            },
+        ]
+    )
+
+    rows = compute_matchup_context_rows(games)
+    future = next(row for row in rows if row["game_id"] == "future")
+
+    assert future["h2h_games"] == 2
+    assert future["h2h_recent_games"] == 2
+    assert future["h2h_regular_games"] == 1
+    assert future["h2h_playoff_games"] == 1
+    assert future["h2h_history_home_win_probability"] > 0.5

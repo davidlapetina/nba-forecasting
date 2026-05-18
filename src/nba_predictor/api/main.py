@@ -29,9 +29,17 @@ class PredictionResponse(BaseModel):
     home_win_probability: float = Field(ge=0.0, le=1.0)
     away_win_probability: float = Field(ge=0.0, le=1.0)
     predicted_winner: str
+    classifier_home_win_probability: float | None = Field(default=None, ge=0.0, le=1.0)
+    classifier_away_win_probability: float | None = Field(default=None, ge=0.0, le=1.0)
+    classifier_predicted_winner: str | None = None
     elo_home_win_probability: float | None = Field(default=None, ge=0.0, le=1.0)
     elo_away_win_probability: float | None = Field(default=None, ge=0.0, le=1.0)
     elo_predicted_winner: str | None = None
+    history_home_win_probability: float | None = Field(default=None, ge=0.0, le=1.0)
+    history_away_win_probability: float | None = Field(default=None, ge=0.0, le=1.0)
+    h2h_games: int | None = None
+    h2h_recent_games: int | None = None
+    h2h_playoff_games: int | None = None
     forecasted_home_points: float | None = None
     forecasted_away_points: float | None = None
 
@@ -48,6 +56,9 @@ class ModelInfoResponse(BaseModel):
     trained_at: str
     metrics: dict[str, float]
     elo_baseline_metrics: dict[str, float] | None = None
+    history_baseline_metrics: dict[str, float] | None = None
+    blend_metrics: dict[str, float] | None = None
+    blend_weights: dict[str, float] | None = None
 
 
 class ChatRequest(BaseModel):
@@ -136,11 +147,21 @@ def predict_matchup(request: MatchupRequest) -> PredictionResponse:
         predicted_winner=request.home_team.upper()
         if result["predicted_winner_team_id"] == home_team_id
         else request.away_team.upper(),
+        classifier_home_win_probability=result["classifier_home_win_probability"],
+        classifier_away_win_probability=result["classifier_away_win_probability"],
+        classifier_predicted_winner=request.home_team.upper()
+        if result["classifier_predicted_winner_team_id"] == home_team_id
+        else request.away_team.upper(),
         elo_home_win_probability=result["elo_home_win_probability"],
         elo_away_win_probability=result["elo_away_win_probability"],
         elo_predicted_winner=request.home_team.upper()
         if result["elo_predicted_winner_team_id"] == home_team_id
         else request.away_team.upper(),
+        history_home_win_probability=result["history_home_win_probability"],
+        history_away_win_probability=result["history_away_win_probability"],
+        h2h_games=result["h2h_games"],
+        h2h_recent_games=result["h2h_recent_games"],
+        h2h_playoff_games=result["h2h_playoff_games"],
         forecasted_home_points=result["forecasted_home_points"],
         forecasted_away_points=result["forecasted_away_points"],
     )

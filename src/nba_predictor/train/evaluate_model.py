@@ -12,8 +12,10 @@ from sklearn.metrics import RocCurveDisplay, roc_curve
 from nba_predictor.config import settings
 from nba_predictor.train.train_classifier import (
     FEATURE_COLUMNS,
+    blended_probabilities,
     elo_probabilities,
     evaluate_predictions,
+    history_probabilities,
     load_training_data,
     time_based_split,
 )
@@ -74,23 +76,53 @@ def evaluate_saved_model() -> dict[str, float]:
     metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
     model_path = settings.model_dir / "classifier" / f"game_winner_{metadata['model_name']}.joblib"
     model = joblib.load(model_path)
-    probabilities = model.predict_proba(valid_df[FEATURE_COLUMNS])[:, 1]
+    probabilities = pd.Series(model.predict_proba(valid_df[FEATURE_COLUMNS])[:, 1], index=valid_df.index)
     y_true = valid_df["home_team_win"].astype(int)
     metrics = evaluate_predictions(y_true, probabilities)
-    elo_metrics = evaluate_predictions(y_true, elo_probabilities(valid_df))
-    artifacts = save_evaluation_artifacts(y_true, pd.Series(probabilities))
+    elo_probability = elo_probabilities(valid_df)
+    history_probability = history_probabilities(valid_df)
+    blend_probability = blended_probabilities(
+        probabilities,
+        elo_probability,
+        history_probability,
+        metadata.get("blend_weights", {"classifier": 0.6, "elo": 0.3, "history": 0.1}),
+    )
+    elo_metrics = evaluate_predictions(y_true, elo_probability)
+    history_metrics = evaluate_predictions(y_true, history_probability)
+    blend_metrics = evaluate_predictions(y_true, blend_probability)
+    artifacts = save_evaluation_artifacts(y_true, blend_probability)
     output_dir = settings.data_dir / "processed" / "evaluation"
     output_dir.mkdir(parents=True, exist_ok=True)
     (output_dir / "latest_metrics.json").write_text(
-        json.dumps({"classifier": metrics, "elo_baseline": elo_metrics}, indent=2),
+        json.dumps(
+            {
+                "blend": blend_metrics,
+                "classifier": metrics,
+                "elo_baseline": elo_metrics,
+                "history_baseline": history_metrics,
+            },
+            indent=2,
+        ),
         encoding="utf-8",
     )
     metadata["evaluation_artifacts"] = artifacts
     metadata["metrics"] = metrics
     metadata["elo_baseline_metrics"] = elo_metrics
+    metadata["history_baseline_metrics"] = history_metrics
+    metadata["blend_metrics"] = blend_metrics
     metadata_path.write_text(json.dumps(metadata, indent=2), encoding="utf-8")
-    print(json.dumps({"classifier": metrics, "elo_baseline": elo_metrics}, indent=2))
-    return metrics
+    print(
+        json.dumps(
+            {
+                "blend": blend_metrics,
+                "classifier": metrics,
+                "elo_baseline": elo_metrics,
+                "history_baseline": history_metrics,
+            },
+            indent=2,
+        )
+    )
+    return blend_metrics
 
 
 def main() -> None:

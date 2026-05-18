@@ -62,9 +62,17 @@ def test_predict_matchup_includes_elo_baseline(monkeypatch) -> None:
             "home_win_probability": 0.64,
             "away_win_probability": 0.36,
             "predicted_winner_team_id": 1,
+            "classifier_home_win_probability": 0.66,
+            "classifier_away_win_probability": 0.34,
+            "classifier_predicted_winner_team_id": 1,
             "elo_home_win_probability": 0.58,
             "elo_away_win_probability": 0.42,
             "elo_predicted_winner_team_id": 1,
+            "history_home_win_probability": 0.54,
+            "history_away_win_probability": 0.46,
+            "h2h_games": 20,
+            "h2h_recent_games": 10,
+            "h2h_playoff_games": 6,
             "forecasted_home_points": 116.2,
             "forecasted_away_points": 110.8,
         },
@@ -78,3 +86,5 @@ def test_predict_matchup_includes_elo_baseline(monkeypatch) -> None:
     assert response.status_code == 200
     assert response.json()["elo_home_win_probability"] == 0.58
     assert response.json()["elo_predicted_winner"] == "BOS"
+    assert response.json()["classifier_home_win_probability"] == 0.66
+    assert response.json()["h2h_playoff_games"] == 6
