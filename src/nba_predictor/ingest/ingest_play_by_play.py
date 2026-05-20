@@ -5,13 +5,26 @@ from datetime import UTC, date, datetime
 from typing import Any
 
 import pandas as pd
-from sqlalchemy import and_, select
+from sqlalchemy import and_, inspect, select, text
 
 from nba_predictor.db import games, get_engine, play_by_play_events, play_by_play_sync_state, upsert_rows
 from nba_predictor.ingest.ingest_history import season_range
 from nba_predictor.ingest.nba_client import NBAClient
 
 PLAY_BY_PLAY_START_SEASON = "1996-97"
+
+
+def ensure_play_by_play_sync_state_columns() -> None:
+    engine = get_engine()
+    inspector = inspect(engine)
+    existing = {column["name"] for column in inspector.get_columns("play_by_play_sync_state")}
+    with engine.begin() as conn:
+        if "status" not in existing:
+            conn.execute(
+                text("alter table play_by_play_sync_state add column status varchar not null default 'success'")
+            )
+        if "error_message" not in existing:
+            conn.execute(text("alter table play_by_play_sync_state add column error_message varchar"))
 
 
 def _is_missing(value: Any) -> bool:
@@ -72,18 +85,18 @@ def normalize_play_by_play_rows(
 
 
 def _completed_games_for_season(season: str, include_existing: bool) -> list[dict[str, Any]]:
+    ensure_play_by_play_sync_state_columns()
     stmt = select(games.c.game_id, games.c.game_date).where(
         and_(
             games.c.season == season,
             games.c.home_score.is_not(None),
             games.c.away_score.is_not(None),
+            games.c.home_score > 0,
+            games.c.away_score > 0,
         )
     )
     if not include_existing:
-        stmt = stmt.where(
-            ~games.c.game_id.in_(select(play_by_play_events.c.game_id).distinct()),
-            ~games.c.game_id.in_(select(play_by_play_sync_state.c.game_id)),
-        )
+        stmt = stmt.where(~games.c.game_id.in_(select(play_by_play_events.c.game_id).distinct()))
     with get_engine().connect() as conn:
         return [dict(row._mapping) for row in conn.execute(stmt.order_by(games.c.game_date, games.c.game_id))]
 
@@ -93,8 +106,16 @@ def ingest_play_by_play(season: str, include_existing: bool = False) -> int:
     engine = get_engine()
     inserted = 0
     for game in _completed_games_for_season(season, include_existing):
-        frame = client.fetch_play_by_play(str(game["game_id"]))
-        rows = normalize_play_by_play_rows(frame, str(game["game_id"]), season, game["game_date"])
+        game_id = str(game["game_id"])
+        try:
+            frame = client.fetch_play_by_play(game_id)
+            rows = normalize_play_by_play_rows(frame, game_id, season, game["game_date"])
+            if not rows:
+                raise ValueError("empty play-by-play response")
+        except Exception as exc:
+            _record_play_by_play_failure(engine, game_id, exc)
+            print(f"skipped play-by-play for {game_id}: {type(exc).__name__}: {exc}")
+            continue
         inserted += upsert_rows(
             engine,
             play_by_play_events,
@@ -111,15 +132,36 @@ def ingest_play_by_play(season: str, include_existing: bool = False) -> int:
             play_by_play_sync_state,
             [
                 {
-                    "game_id": str(game["game_id"]),
+                    "game_id": game_id,
                     "fetched_at": datetime.now(UTC).replace(tzinfo=None),
                     "event_count": len(rows),
+                    "status": "success",
+                    "error_message": None,
                 }
             ],
             ["game_id"],
-            ["fetched_at", "event_count"],
+            ["fetched_at", "event_count", "status", "error_message"],
         )
     return inserted
+
+
+def _record_play_by_play_failure(engine: Any, game_id: str, exc: Exception) -> None:
+    message = f"{type(exc).__name__}: {exc}"
+    upsert_rows(
+        engine,
+        play_by_play_sync_state,
+        [
+            {
+                "game_id": game_id,
+                "fetched_at": datetime.now(UTC).replace(tzinfo=None),
+                "event_count": 0,
+                "status": "failed",
+                "error_message": message[:1000],
+            }
+        ],
+        ["game_id"],
+        ["fetched_at", "event_count", "status", "error_message"],
+    )
 
 
 def ingest_play_by_play_history(start_season: str, end_season: str, include_existing: bool = False) -> dict[str, int]:

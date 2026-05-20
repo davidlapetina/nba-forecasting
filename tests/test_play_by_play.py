@@ -4,7 +4,11 @@ from datetime import date
 
 import pandas as pd
 
-from nba_predictor.ingest.ingest_play_by_play import ingest_play_by_play_history, normalize_play_by_play_rows
+from nba_predictor.ingest.ingest_play_by_play import (
+    ingest_play_by_play,
+    ingest_play_by_play_history,
+    normalize_play_by_play_rows,
+)
 
 
 def test_normalize_play_by_play_rows_supports_v3_headers() -> None:
@@ -105,3 +109,39 @@ def test_play_by_play_history_starts_at_available_era(monkeypatch) -> None:
 
     assert calls == ["1996-97", "1997-98"]
     assert summary == {"1996-97": 1, "1997-98": 1}
+
+
+def test_ingest_play_by_play_records_failure_and_continues(monkeypatch, capsys) -> None:
+    class FakeClient:
+        def fetch_play_by_play(self, game_id: str) -> pd.DataFrame:
+            if game_id == "bad":
+                raise ValueError("empty response")
+            if game_id == "empty":
+                return pd.DataFrame()
+            return pd.DataFrame([{"actionNumber": 1, "description": "tip"}])
+
+    upserts: list[dict[str, object]] = []
+
+    def fake_upsert_rows(engine, table, rows, conflict_columns, update_columns):
+        upserts.extend(rows)
+        return len(rows)
+
+    monkeypatch.setattr(
+        "nba_predictor.ingest.ingest_play_by_play._completed_games_for_season",
+        lambda season, include_existing=False: [
+            {"game_id": "bad", "game_date": date(2025, 10, 21)},
+            {"game_id": "empty", "game_date": date(2025, 10, 21)},
+            {"game_id": "good", "game_date": date(2025, 10, 22)},
+        ],
+    )
+    monkeypatch.setattr("nba_predictor.ingest.ingest_play_by_play.NBAClient", FakeClient)
+    monkeypatch.setattr("nba_predictor.ingest.ingest_play_by_play.get_engine", lambda: object())
+    monkeypatch.setattr("nba_predictor.ingest.ingest_play_by_play.upsert_rows", fake_upsert_rows)
+
+    inserted = ingest_play_by_play("2025-26")
+
+    assert inserted == 1
+    assert any(row.get("game_id") == "bad" and row.get("status") == "failed" for row in upserts)
+    assert any(row.get("game_id") == "empty" and row.get("status") == "failed" for row in upserts)
+    assert any(row.get("game_id") == "good" and row.get("status") == "success" for row in upserts)
+    assert "skipped play-by-play for bad" in capsys.readouterr().out

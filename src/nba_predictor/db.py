@@ -184,6 +184,8 @@ play_by_play_sync_state = Table(
     Column("game_id", String, primary_key=True),
     Column("fetched_at", DateTime, nullable=False, server_default=func.now()),
     Column("event_count", Integer, nullable=False),
+    Column("status", String, nullable=False, server_default="success"),
+    Column("error_message", String),
 )
 
 team_rosters = Table(
